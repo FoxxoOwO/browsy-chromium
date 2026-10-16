@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   // Layout & Bounds
   updateContentBounds: (bounds) => ipcRenderer.invoke('layout:update-bounds', bounds),
   setLayoutMode: (mode) => ipcRenderer.invoke('layout:set-mode', mode),
+  setViewVisibility: (visible) => ipcRenderer.invoke('layout:set-view-visibility', visible),
 
   // Shields & Adblocker
   getShieldsInfo: () => ipcRenderer.invoke('shields:get-info'),

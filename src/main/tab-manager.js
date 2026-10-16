@@ -42,6 +42,13 @@ class TabManager {
     }
   }
 
+  setViewVisibility(visible) {
+    const activeTab = this.getActiveTab();
+    if (activeTab && activeTab.view) {
+      activeTab.view.setVisible(visible);
+    }
+  }
+
   getActiveTab() {
     return this.tabs.get(this.activeTabId) || null;
   }
@@ -225,6 +232,13 @@ class TabManager {
       const extFile = path.join(__dirname, '../ui/extensions.html');
       tab.url = 'browsy://extensions';
       tab.view.webContents.loadFile(extFile);
+      return;
+    }
+
+    if (targetUrl === 'browsy://settings') {
+      const settingsFile = path.join(__dirname, '../ui/settings.html');
+      tab.url = 'browsy://settings';
+      tab.view.webContents.loadFile(settingsFile);
       return;
     }
 

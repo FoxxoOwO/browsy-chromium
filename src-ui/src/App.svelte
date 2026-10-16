@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import Icon from './components/Icon.svelte';
 
   const api = typeof window !== 'undefined' ? window.browsyAPI : null;
 
@@ -24,13 +25,12 @@
   let settingsData = $state({});
 
   let activePopover = $state(null); // 'shields' | 'video' | 'popups' | 'expander' | 'extensions' | 'workspace' | null
-  let showSettingsModal = $state(false);
   let showWorkspaceModal = $state(false);
 
   // New Workspace Form
   let newWsName = $state('');
-  let newWsIcon = $state('📁');
-  let newWsColor = $state('#6366f1');
+  let newWsIcon = $state('personal');
+  let newWsColor = $state('#f4f4f5');
 
   // New Snippet Form
   let newSnippetTrigger = $state('');
@@ -48,11 +48,37 @@
   );
 
   let activeWorkspace = $derived(
-    workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0] || { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' }
+    workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0] || { id: 'ws_default', name: 'Osobní', icon: 'personal', color: '#f4f4f5' }
   );
 
-  const presetIcons = ['👤', '💼', '⚡', '🎓', '🎮', '🛍️', '🎨', '🎵', '🚀', '💻', '🏠', '📚', '🎬', '💡'];
-  const presetColors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6'];
+  // Minimalist monochromatic presets (clean SVG icon IDs & neutral grays)
+  const presetIcons = [
+    { id: 'personal', label: 'Osobní' },
+    { id: 'work', label: 'Práce' },
+    { id: 'dev', label: 'Vývoj' },
+    { id: 'study', label: 'Studium' },
+    { id: 'gaming', label: 'Hry' },
+    { id: 'star', label: 'Oblíbené' },
+    { id: 'folder', label: 'Složka' },
+    { id: 'layers', label: 'Prostor' },
+    { id: 'globe', label: 'Web' }
+  ];
+
+  const presetColors = ['#f4f4f5', '#d4d4d8', '#a1a1aa', '#71717a', '#52525b', '#3f3f46'];
+
+  function mapWorkspaceIcon(raw) {
+    if (!raw) return 'personal';
+    if (raw === '👤' || raw === 'personal' || raw === 'user') return 'personal';
+    if (raw === '💼' || raw === 'work' || raw === 'briefcase') return 'work';
+    if (raw === '⚡' || raw === 'dev' || raw === 'code') return 'dev';
+    if (raw === '🎓' || raw === 'study' || raw === 'book') return 'study';
+    if (raw === '🎮' || raw === 'gaming' || raw === 'gamepad') return 'gaming';
+    if (raw === '📁' || raw === 'folder') return 'folder';
+    if (raw === '⭐' || raw === 'star') return 'star';
+    if (raw === '🌐' || raw === 'globe') return 'globe';
+    if (raw === 'layers') return 'layers';
+    return 'personal';
+  }
 
   // Viewport sync
   function syncViewport() {
@@ -73,8 +99,19 @@
     if (rawUrl.startsWith('browsy://extensions') || rawUrl.includes('extensions.html')) {
       return 'browsy://extensions';
     }
+    if (rawUrl.startsWith('browsy://settings') || rawUrl.includes('settings.html')) {
+      return 'browsy://settings';
+    }
     return rawUrl;
   }
+
+  // Prevent WebContentsView from covering popovers or modals
+  $effect(() => {
+    const isOverlayActive = showWorkspaceModal || activePopover !== null;
+    if (api && api.setViewVisibility) {
+      api.setViewVisibility(!isOverlayActive);
+    }
+  });
 
   onMount(async () => {
     if (!api) return;
@@ -162,7 +199,6 @@
         }
       } else if (e.key === 'Escape') {
         activePopover = null;
-        showSettingsModal = false;
         showWorkspaceModal = false;
         contextMenu.visible = false;
       }
@@ -181,19 +217,18 @@
     if (api) api.closeTab(id);
   }
 
-  function toggleMute(id, e) {
-    if (e) e.stopPropagation();
-    if (api) api.toggleMute(id);
-  }
-
   function createTab() {
     if (api) api.createTab('browsy://newtab', { workspaceId: activeWorkspaceId });
   }
 
   function navigate(url) {
-    if (api && activeTabId && url.trim()) {
-      api.navigate(activeTabId, url.trim());
-    }
+    if (!url.trim() || !api || !activeTabId) return;
+    api.navigate(activeTabId, url.trim());
+  }
+
+  function toggleMute(tabId, e) {
+    if (e) e.stopPropagation();
+    if (api) api.toggleMute(tabId);
   }
 
   function toggleLayout() {
@@ -212,6 +247,16 @@
     activePopover = activePopover === name ? null : name;
     if (activePopover === 'expander') loadExpander();
     if (activePopover === 'extensions') loadExtensions();
+  }
+
+  function openSettings() {
+    activePopover = null;
+    const existing = currentTabs.find(t => t.url && (t.url.startsWith('browsy://settings') || t.url.includes('settings.html')));
+    if (existing) {
+      api.switchTab(existing.id);
+    } else {
+      api.createTab('browsy://settings', { workspaceId: activeWorkspaceId });
+    }
   }
 
   async function loadExpander() {
@@ -264,9 +309,9 @@
       <!-- Horizontal Tab Strip -->
       <div id="horizontal-tab-bar" class="tab-bar">
         <button class="workspace-pill" onclick={() => togglePopover('workspace')} title="Přepnout pracovní prostor">
-          <span class="ws-icon">{activeWorkspace.icon}</span>
+          <Icon name={mapWorkspaceIcon(activeWorkspace.icon)} size={14} />
           <span class="ws-name">{activeWorkspace.name}</span>
-          <span class="ws-arrow">▾</span>
+          <Icon name="chevron-down" size={12} class="ws-arrow" />
         </button>
 
         <div class="tabs-scroll-area">
@@ -282,22 +327,24 @@
                 {#if tab.favicon}
                   <img src={tab.favicon} alt="" onerror={(e) => e.target.style.display = 'none'} />
                 {:else}
-                  <span>🌐</span>
+                  <Icon name="globe" size={14} />
                 {/if}
               </div>
               <span class="tab-title">{tab.title || (tab.isLoading ? 'Načítání...' : 'Nová záložka')}</span>
               {#if tab.isAudioPlaying || tab.isMuted}
-                <button class="tab-audio-btn" onclick={(e) => toggleMute(tab.id, e)}>
-                  {tab.isMuted ? '🔇' : '🔊'}
+                <button class="tab-audio-btn" onclick={(e) => toggleMute(tab.id, e)} title={tab.isMuted ? 'Zapnout zvuk' : 'Ztlumit zvuk'}>
+                  <Icon name={tab.isMuted ? 'volume-x' : 'volume'} size={13} />
                 </button>
               {/if}
-              <button class="tab-close-btn" onclick={(e) => closeTab(tab.id, e)}>&times;</button>
+              <button class="tab-close-btn" onclick={(e) => closeTab(tab.id, e)} title="Zavřít záložku">
+                <Icon name="close" size={12} />
+              </button>
             </div>
           {/each}
         </div>
 
         <button class="nav-btn icon-btn new-tab-btn" onclick={createTab} title="Nová záložka (Ctrl+T)">
-          ➕
+          <Icon name="plus" size={16} />
         </button>
       </div>
     {/if}
@@ -305,14 +352,24 @@
     <!-- Nav Bar & Omnibox -->
     <div id="nav-bar">
       <div class="nav-group nav-controls">
-        <button class="nav-btn" disabled={!canGoBack} onclick={() => api.goBack(activeTabId)} title="Zpět">◀</button>
-        <button class="nav-btn" disabled={!canGoForward} onclick={() => api.goForward(activeTabId)} title="Vpřed">▶</button>
-        <button class="nav-btn" onclick={() => api.reload(activeTabId)} title="Obnovit (F5)">🔄</button>
-        <button class="nav-btn" onclick={() => navigate('browsy://newtab')} title="Domů">🏠</button>
+        <button class="nav-btn" disabled={!canGoBack} onclick={() => api.goBack(activeTabId)} title="Zpět">
+          <Icon name="back" size={16} />
+        </button>
+        <button class="nav-btn" disabled={!canGoForward} onclick={() => api.goForward(activeTabId)} title="Vpřed">
+          <Icon name="forward" size={16} />
+        </button>
+        <button class="nav-btn" onclick={() => api.reload(activeTabId)} title="Obnovit (F5)">
+          <Icon name="reload" size={15} />
+        </button>
+        <button class="nav-btn" onclick={() => navigate('browsy://newtab')} title="Domů">
+          <Icon name="home" size={15} />
+        </button>
       </div>
 
       <div id="omnibox-container">
-        <span class="omnibox-icon">🔒</span>
+        <span class="omnibox-icon">
+          <Icon name="lock" size={14} />
+        </span>
         <input
           type="text"
           id="omnibox-input"
@@ -322,12 +379,14 @@
         />
         <div class="omnibox-badges">
           {#if blockedPopups.length > 0}
-            <button class="badge-btn popup-badge" onclick={() => togglePopover('popups')}>
-              🚫 <span>{blockedPopups.length}</span>
+            <button class="badge-btn popup-badge" onclick={() => togglePopover('popups')} title="Zablokovaná vyskakovací okna">
+              <Icon name="ban" size={13} />
+              <span>{blockedPopups.length}</span>
             </button>
           {/if}
-          <button class="badge-btn shields-badge" onclick={() => togglePopover('shields')} title="Browsy Shields & uBlock Origin">
-            🛡️ <span>{blockedAdsCount}</span>
+          <button class="badge-btn shields-badge" onclick={() => togglePopover('shields')} title="Browsy Shields & uBlock Origin (Rust Native)">
+            <Icon name="shield" size={13} />
+            <span>{blockedAdsCount}</span>
           </button>
         </div>
       </div>
@@ -335,25 +394,31 @@
       <div class="nav-group action-tools">
         <!-- Video Downloader -->
         <button class="nav-btn action-btn has-badge" onclick={() => togglePopover('video')} title="Stahovač videí">
-          📹
+          <Icon name="video" size={16} />
           {#if detectedVideos.length > 0}
             <span class="tool-counter-badge">{detectedVideos.length}</span>
           {/if}
         </button>
 
         <!-- Text Expander -->
-        <button class="nav-btn action-btn" onclick={() => togglePopover('expander')} title="Text Expander">📝</button>
+        <button class="nav-btn action-btn" onclick={() => togglePopover('expander')} title="Text Expander">
+          <Icon name="expander" size={15} />
+        </button>
 
         <!-- Extensions -->
-        <button class="nav-btn action-btn" onclick={() => togglePopover('extensions')} title="Doplňky (Chrome & Firefox)">🧩</button>
+        <button class="nav-btn action-btn" onclick={() => togglePopover('extensions')} title="Doplňky (Chrome & Firefox)">
+          <Icon name="extensions" size={15} />
+        </button>
 
         <!-- Tab Layout Switcher -->
         <button class="nav-btn action-btn" onclick={toggleLayout} title="Přepnout rozložení tabů">
-          {layoutMode === 'horizontal' ? '📑' : '📋'}
+          <Icon name="layout" size={15} />
         </button>
 
-        <!-- Settings -->
-        <button class="nav-btn action-btn" onclick={() => showSettingsModal = true} title="Nastavení">⚙️</button>
+        <!-- Settings (Opens dedicated browsy://settings) -->
+        <button class="nav-btn action-btn" onclick={openSettings} title="Nastavení Browsy">
+          <Icon name="settings" size={16} />
+        </button>
       </div>
     </div>
   </header>
@@ -365,16 +430,19 @@
       <aside id="vertical-sidebar" class={`sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <div class="v-workspace-header">
           <button class="v-ws-pill" onclick={() => togglePopover('workspace')} title="Změnit pracovní prostor">
-            <span class="ws-icon">{activeWorkspace.icon}</span>
+            <Icon name={mapWorkspaceIcon(activeWorkspace.icon)} size={14} class="ws-icon" />
             <span class="v-ws-name">{activeWorkspace.name}</span>
-            <span class="ws-arrow">▾</span>
+            <Icon name="chevron-down" size={12} class="ws-arrow" />
           </button>
-          <button class="nav-btn icon-btn" onclick={toggleSidebar} title="Sbalit/Rozbalit panel">↔</button>
+          <button class="nav-btn icon-btn" onclick={toggleSidebar} title="Sbalit/Rozbalit panel">
+            <Icon name="layout" size={14} />
+          </button>
         </div>
 
         <div class="sidebar-top">
           <button class="v-new-tab-btn" onclick={createTab}>
-            ➕ <span class="v-btn-text">Nová záložka</span>
+            <Icon name="plus" size={15} />
+            <span class="v-btn-text">Nová záložka</span>
           </button>
         </div>
 
@@ -391,14 +459,18 @@
                 {#if tab.favicon}
                   <img src={tab.favicon} alt="" onerror={(e) => e.target.style.display = 'none'} />
                 {:else}
-                  <span>🌐</span>
+                  <Icon name="globe" size={14} />
                 {/if}
               </div>
               <span class="tab-title">{tab.title || (tab.isLoading ? 'Načítání...' : 'Nová záložka')}</span>
               {#if tab.isAudioPlaying || tab.isMuted}
-                <button class="tab-audio-btn" onclick={(e) => toggleMute(tab.id, e)}>{tab.isMuted ? '🔇' : '🔊'}</button>
+                <button class="tab-audio-btn" onclick={(e) => toggleMute(tab.id, e)}>
+                  <Icon name={tab.isMuted ? 'volume-x' : 'volume'} size={13} />
+                </button>
               {/if}
-              <button class="tab-close-btn" onclick={(e) => closeTab(tab.id, e)}>&times;</button>
+              <button class="tab-close-btn" onclick={(e) => closeTab(tab.id, e)} title="Zavřít">
+                <Icon name="close" size={12} />
+              </button>
             </div>
           {/each}
         </div>
@@ -420,15 +492,16 @@
             {#each workspaces as ws}
               <button
                 class={`zen-ws-btn ${ws.id === activeWorkspaceId ? 'active' : ''}`}
-                style={`--ws-color: ${ws.color}; --ws-glow: ${ws.color}66;`}
                 onclick={() => api.switchWorkspace(ws.id)}
                 title={`${ws.name} (${currentTabs.filter(t => t.workspaceId === ws.id).length} záložek)`}
               >
-                {ws.icon}
+                <Icon name={mapWorkspaceIcon(ws.icon)} size={15} />
               </button>
             {/each}
           </div>
-          <button class="zen-ws-btn zen-ws-add" onclick={() => showWorkspaceModal = true} title="Nový prostor">+</button>
+          <button class="zen-ws-btn zen-ws-add" onclick={() => showWorkspaceModal = true} title="Nový prostor">
+            <Icon name="plus" size={14} />
+          </button>
         </div>
       </aside>
     {/if}
@@ -437,12 +510,17 @@
     <main id="web-view-viewport" bind:this={viewportEl}></main>
   </div>
 
-  <!-- Popovers -->
+  <!-- Popovers (Monochromatic with SVGs) -->
   {#if activePopover === 'shields'}
     <div class="popover">
       <div class="popover-header">
-        <div class="popover-title">🛡️ Browsy Shields & uBlock (Rust Core)</div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>&times;</button>
+        <div class="popover-title">
+          <Icon name="shield" size={16} />
+          <span>Browsy Shields & uBlock (Rust Core)</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
       <div class="popover-content">
         <div class="shields-toggle-card">
@@ -457,8 +535,8 @@
             <span class="stat-label">Blokováno na stránce</span>
           </div>
           <div class="stat-box">
-            <span class="stat-number" style="color:#6366f1;">Rust</span>
-            <span class="stat-label">Brave adblock engine</span>
+            <span class="stat-number">Rust</span>
+            <span class="stat-label">Brave adblock-rust</span>
           </div>
         </div>
       </div>
@@ -468,8 +546,13 @@
   {#if activePopover === 'video'}
     <div class="popover">
       <div class="popover-header">
-        <div class="popover-title">📹 Web Video Downloader</div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>&times;</button>
+        <div class="popover-title">
+          <Icon name="video" size={16} />
+          <span>Web Video Downloader</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
       <div class="popover-content">
         {#if detectedVideos.length === 0}
@@ -481,7 +564,7 @@
                 <div class="video-title">{v.title}</div>
                 <div class="video-meta"><strong>{v.format}</strong> &bull; {v.size}</div>
               </div>
-              <button class="primary-btn" onclick={() => api.downloadVideo(v.url)}>⬇ Stáhnout</button>
+              <button class="primary-btn" onclick={() => api.downloadVideo(v.url)}>Stáhnout</button>
             </div>
           {/each}
         {/if}
@@ -492,8 +575,13 @@
   {#if activePopover === 'workspace'}
     <div class="popover">
       <div class="popover-header">
-        <div class="popover-title">💼 Zen Workspaces</div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>&times;</button>
+        <div class="popover-title">
+          <Icon name="layers" size={16} />
+          <span>Pracovní prostory (Zen Workspaces)</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
       <div class="popover-content">
         <div class="workspace-list">
@@ -505,15 +593,16 @@
               tabindex="0"
             >
               <div class="ws-item-info">
-                <span>{ws.icon}</span>
-                <span style={`color: ${ws.color}; font-weight: 600;`}>{ws.name}</span>
+                <Icon name={mapWorkspaceIcon(ws.icon)} size={15} />
+                <span style="font-weight: 600; color: #f4f4f5;">{ws.name}</span>
               </div>
               <span class="ws-item-badge">{currentTabs.filter(t => t.workspaceId === ws.id).length} záložek</span>
             </div>
           {/each}
         </div>
         <button class="primary-btn full-width" style="margin-top:12px;" onclick={() => { activePopover = null; showWorkspaceModal = true; }}>
-          ➕ Vytvořit nový prostor
+          <Icon name="plus" size={14} />
+          <span>Vytvořit nový prostor</span>
         </button>
       </div>
     </div>
@@ -522,15 +611,22 @@
   {#if activePopover === 'expander'}
     <div class="popover expander-popover">
       <div class="popover-header">
-        <div class="popover-title">📝 Text Expander</div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>&times;</button>
+        <div class="popover-title">
+          <Icon name="expander" size={16} />
+          <span>Text Expander</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
       <div class="popover-content">
         <div class="snippet-add-box">
           <input type="text" placeholder="Zkratka (:adresa)" bind:value={newSnippetTrigger} style="width: 30%;" />
           <input type="text" placeholder="Popisek" bind:value={newSnippetLabel} style="width: 30%;" />
           <input type="text" placeholder="Text ({date})" bind:value={newSnippetReplacement} style="width: 30%;" />
-          <button class="primary-btn" onclick={addSnippet} style="width: 10%;">+</button>
+          <button class="primary-btn" onclick={addSnippet} style="width: 10%;">
+            <Icon name="plus" size={14} />
+          </button>
         </div>
         {#each expanderConfig.snippets as s}
           <div class="snippet-row">
@@ -539,7 +635,9 @@
               <strong style="margin-left: 6px;">{s.label}</strong>
             </div>
             <span class="snippet-replacement">{s.replacement}</span>
-            <button class="tab-close-btn" onclick={async () => { await api.deleteSnippet(s.id); loadExpander(); }}>&times;</button>
+            <button class="tab-close-btn" onclick={async () => { await api.deleteSnippet(s.id); loadExpander(); }}>
+              <Icon name="close" size={12} />
+            </button>
           </div>
         {/each}
       </div>
@@ -549,12 +647,18 @@
   {#if activePopover === 'extensions'}
     <div class="popover">
       <div class="popover-header">
-        <div class="popover-title">🧩 Doplňky (Chrome & Firefox)</div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>&times;</button>
+        <div class="popover-title">
+          <Icon name="extensions" size={16} />
+          <span>Doplňky (Chrome & Firefox)</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null}>
+          <Icon name="close" size={14} />
+        </button>
       </div>
       <div class="popover-content">
         <button class="primary-btn full-width" onclick={async () => { const res = await api.pickAndInstallExtension(); if (res.success) loadExtensions(); }}>
-          ➕ Nainstalovat doplněk (.crx / .xpi / .zip)
+          <Icon name="plus" size={14} />
+          <span>Nainstalovat doplněk (.crx / .xpi / .zip)</span>
         </button>
         <button class="secondary-btn full-width" style="margin-top: 8px;" onclick={() => { navigate('browsy://extensions'); activePopover = null; }}>
           Spravovat doplňky
@@ -577,45 +681,42 @@
       <div class="modal-dialog" style="width:440px;">
         <div class="modal-header">
           <h2>Nový pracovní prostor</h2>
-          <button class="modal-close-btn" onclick={() => showWorkspaceModal = false}>&times;</button>
+          <button class="modal-close-btn" onclick={() => showWorkspaceModal = false}>
+            <Icon name="close" size={16} />
+          </button>
         </div>
         <div class="modal-body">
-          <input type="text" placeholder="Název prostoru..." bind:value={newWsName} style="width:100%; padding:8px; margin-bottom:12px; background:#121216; border:1px solid #333; color:#fff; border-radius:6px;" />
-          <div class="icon-picker-grid" style="margin-bottom:12px;">
-            {#each presetIcons as icon}
-              <button class={`icon-choice ${icon === newWsIcon ? 'selected' : ''}`} onclick={() => newWsIcon = icon}>{icon}</button>
+          <input
+            type="text"
+            placeholder="Název prostoru..."
+            bind:value={newWsName}
+            style="width:100%; padding:10px 12px; margin-bottom:14px; background:#09090b; border:1px solid #27272a; color:#f4f4f5; border-radius:8px; font-size:14px;"
+          />
+          <div style="font-size:12px; color:#71717a; margin-bottom:8px; font-weight:500;">Výběr ikony:</div>
+          <div class="icon-picker-grid" style="margin-bottom:16px;">
+            {#each presetIcons as item}
+              <button
+                class={`icon-choice ${item.id === newWsIcon ? 'selected' : ''}`}
+                onclick={() => newWsIcon = item.id}
+                title={item.label}
+              >
+                <Icon name={item.id} size={18} />
+              </button>
             {/each}
           </div>
-          <div class="color-picker-grid" style="margin-bottom:16px;">
-            {#each presetColors as col}
-              <button class={`color-choice ${col === newWsColor ? 'selected' : ''}`} style={`background: ${col};`} onclick={() => newWsColor = col}></button>
-            {/each}
-          </div>
-          <button class="primary-btn full-width" onclick={saveNewWorkspace}>Uložit prostor</button>
-        </div>
-      </div>
-    </div>
-  {/if}
 
-  {#if showSettingsModal}
-    <div class="modal-backdrop">
-      <div class="modal-dialog">
-        <div class="modal-header">
-          <h2>Nastavení Browsy</h2>
-          <button class="modal-close-btn" onclick={() => showSettingsModal = false}>&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="setting-row">
-            <span>Rozložení tabů</span>
-            <select bind:value={layoutMode} onchange={toggleLayout}>
-              <option value="horizontal">Horizontální</option>
-              <option value="vertical">Vertikální (Zen styl)</option>
-            </select>
+          <div style="font-size:12px; color:#71717a; margin-bottom:8px; font-weight:500;">Odstín akcentu:</div>
+          <div class="color-picker-grid" style="margin-bottom:20px;">
+            {#each presetColors as col}
+              <button
+                class={`color-choice ${col === newWsColor ? 'selected' : ''}`}
+                style={`background: ${col};`}
+                onclick={() => newWsColor = col}
+              ></button>
+            {/each}
           </div>
-          <div class="setting-row">
-            <span>Brave Rust Adblocker Engine</span>
-            <span class="badge-tag">Aktivní (Rust)</span>
-          </div>
+
+          <button class="primary-btn full-width" onclick={saveNewWorkspace}>Uložit prostor</button>
         </div>
       </div>
     </div>
@@ -629,11 +730,12 @@
       <div class="context-item" onclick={() => { api.toggleMute(contextMenu.tab.id); contextMenu.visible = false; }}>Ztlumit zvuk</div>
       <div class="context-separator"></div>
       <div class="context-item has-submenu">
-        <span>Přesunout do prostoru ❯</span>
+        <span>Přesunout do prostoru</span>
         <div class="context-submenu">
           {#each workspaces as ws}
             <div class="context-item" onclick={() => moveTabToWorkspace(contextMenu.tab.id, ws.id)}>
-              {ws.icon} {ws.name} {ws.id === contextMenu.tab.workspaceId ? '✔' : ''}
+              <Icon name={mapWorkspaceIcon(ws.icon)} size={14} />
+              <span style="margin-left: 6px;">{ws.name}</span>
             </div>
           {/each}
         </div>

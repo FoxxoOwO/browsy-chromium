@@ -6,68 +6,71 @@
   <title>Nová záložka - Browsy Chromium</title>
   <style>
     :root {
-      --bg: #0f1015;
-      --card-bg: rgba(26, 27, 38, 0.7);
-      --card-hover: rgba(40, 42, 58, 0.9);
-      --border: #28293d;
-      --text: #f1f2f6;
-      --text-muted: #8b8ea4;
-      --accent: #6366f1;
-      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      --bg: #09090b;
+      --card-bg: #121216;
+      --card-hover: #1b1b22;
+      --border: #27272a;
+      --border-subtle: #1f1f23;
+      --text: #f4f4f5;
+      --text-muted: #8b8e9b;
+      --accent: #f4f4f5;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--font-family);
     }
 
     body {
       background-color: var(--bg);
-      background-image:
-        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.1) 0px, transparent 50%);
       color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 40px 20px;
+      padding: 48px 24px;
+      user-select: none;
     }
 
     .container {
       width: 100%;
-      max-width: 900px;
+      max-width: 820px;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
 
+    /* Monochromatic Clock */
     .clock-section {
       text-align: center;
-      margin-bottom: 30px;
+      margin-bottom: 32px;
     }
 
     .clock {
-      font-size: 64px;
+      font-size: 72px;
       font-weight: 700;
-      letter-spacing: -1px;
-      background: var(--accent-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      letter-spacing: -2px;
+      color: #ffffff;
+      line-height: 1;
     }
 
     .date {
-      font-size: 16px;
+      font-size: 15px;
+      font-weight: 500;
       color: var(--text-muted);
-      margin-top: 4px;
+      margin-top: 8px;
+      text-transform: capitalize;
+      letter-spacing: 0.2px;
     }
 
+    /* Monochromatic Search */
     .search-box-wrapper {
       width: 100%;
-      max-width: 640px;
-      margin-bottom: 40px;
+      max-width: 620px;
+      margin-bottom: 36px;
     }
 
     .search-bar {
@@ -76,21 +79,24 @@
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 28px;
-      padding: 10px 20px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(12px);
+      padding: 12px 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
       transition: all 0.2s ease;
     }
 
     .search-bar:focus-within {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+      border-color: #71717a;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+      background: #16161b;
     }
 
     .search-icon {
-      font-size: 18px;
+      width: 18px;
+      height: 18px;
       margin-right: 12px;
       color: var(--text-muted);
+      stroke: currentColor;
+      flex-shrink: 0;
     }
 
     .search-input {
@@ -99,83 +105,109 @@
       border: none;
       outline: none;
       color: var(--text);
-      font-size: 16px;
+      font-size: 15px;
     }
 
     .search-input::placeholder {
-      color: var(--text-muted);
+      color: #52525b;
     }
 
+    /* Minimalist Monochromatic Speed Dials */
     .speed-dials {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
       width: 100%;
-      max-width: 760px;
-      margin-bottom: 40px;
+      max-width: 720px;
+      margin-bottom: 36px;
     }
 
     .dial-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 12px;
       padding: 16px 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
       text-decoration: none;
       color: var(--text);
-      transition: all 0.2s ease;
-      backdrop-filter: blur(8px);
+      transition: all 0.15s ease;
     }
 
     .dial-card:hover {
       background: var(--card-hover);
-      border-color: var(--accent);
-      transform: translateY(-3px);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+      border-color: #52525b;
+      transform: translateY(-2px);
     }
 
     .dial-icon {
-      width: 44px;
-      height: 44px;
+      width: 42px;
+      height: 42px;
       border-radius: 10px;
-      background: var(--border);
+      background: #18181e;
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 22px;
       margin-bottom: 10px;
+      color: #f4f4f5;
+    }
+
+    .dial-icon svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+      stroke: none;
+    }
+
+    .dial-icon svg.stroke-only {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
     }
 
     .dial-title {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 500;
+      color: var(--text-muted);
     }
 
+    .dial-card:hover .dial-title {
+      color: #ffffff;
+    }
+
+    /* Minimalist Monochromatic Features Card */
     .features-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
+      border-radius: 14px;
+      padding: 22px 24px;
       width: 100%;
-      max-width: 760px;
-      backdrop-filter: blur(8px);
+      max-width: 720px;
     }
 
     .features-title {
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 600;
-      margin-bottom: 16px;
+      margin-bottom: 18px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      color: #f4f4f5;
+      letter-spacing: -0.2px;
+    }
+
+    .features-title svg {
+      width: 18px;
+      height: 18px;
+      stroke: #f4f4f5;
     }
 
     .features-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 14px;
+      gap: 16px;
     }
 
     .feat-item {
@@ -185,19 +217,32 @@
     }
 
     .feat-icon {
-      font-size: 20px;
-      background: rgba(99, 102, 241, 0.15);
-      padding: 8px;
+      width: 32px;
+      height: 32px;
+      background: #18181e;
+      border: 1px solid var(--border);
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
+      color: #e4e4e7;
+    }
+
+    .feat-icon svg {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
     }
 
     .feat-text h4 {
       font-size: 13px;
       font-weight: 600;
-      color: var(--text);
+      color: #f4f4f5;
     }
 
     .feat-text p {
@@ -210,87 +255,141 @@
 </head>
 <body>
   <div class="container">
+    <!-- Clock Section -->
     <div class="clock-section">
       <div id="clock" class="clock">12:00</div>
       <div id="date" class="date">Pondělí, 1. ledna</div>
     </div>
 
+    <!-- Search Bar -->
     <div class="search-box-wrapper">
       <form id="search-form" class="search-bar">
-        <span class="search-icon">🔍</span>
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
         <input type="text" id="search-input" class="search-input" placeholder="Hledat na webu nebo zadat URL adresu..." autofocus>
       </form>
     </div>
 
+    <!-- Speed Dials (Minimalist Monochromatic) -->
     <div class="speed-dials">
       <a href="https://www.google.com" class="dial-card">
-        <div class="dial-icon" style="background:#4285F4; color:white;">G</div>
+        <div class="dial-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z"/>
+          </svg>
+        </div>
         <div class="dial-title">Google</div>
       </a>
+
       <a href="https://www.youtube.com" class="dial-card">
-        <div class="dial-icon" style="background:#FF0000; color:white;">▶</div>
+        <div class="dial-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+          </svg>
+        </div>
         <div class="dial-title">YouTube</div>
       </a>
+
       <a href="https://github.com" class="dial-card">
-        <div class="dial-icon" style="background:#24292e; color:white;">🐙</div>
+        <div class="dial-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+        </div>
         <div class="dial-title">GitHub</div>
       </a>
+
       <a href="https://reddit.com" class="dial-card">
-        <div class="dial-icon" style="background:#FF4500; color:white;">🤖</div>
+        <div class="dial-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.56 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.56 12 8 12.56 8 13.25c0 .688.56 1.25 1.25 1.25.688 0 1.249-.562 1.249-1.25 0-.69-.56-1.25-1.25-1.25zm5.5 0c-.687 0-1.248.56-1.248 1.25 0 .688.561 1.25 1.249 1.25.688 0 1.249-.562 1.249-1.25 0-.69-.56-1.25-1.249-1.25zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.197-2.512-.73a.326.326 0 0 0-.232-.095z"/>
+          </svg>
+        </div>
         <div class="dial-title">Reddit</div>
       </a>
+
       <a href="https://cs.wikipedia.org" class="dial-card">
-        <div class="dial-icon" style="background:#333; color:white;">W</div>
+        <div class="dial-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12.09 13.067 9.5 5.5H7.74L4 16.5h1.94l.87-2.63h3.58l.8 2.63h1.9zm-4.32-1.39 1.34-4.06 1.3 4.06zm12.23 4.823-3.62-10.999h-1.8l-2.6 7.55-1.12-3.46 1.15-3.09h-1.84l-2.09 5.86 2.37 6.84h1.79l2.43-6.93 2.3 6.93h1.83l3.6-10.699h-1.8z"/>
+          </svg>
+        </div>
         <div class="dial-title">Wikipedie</div>
       </a>
     </div>
 
+    <!-- Active Features (Minimalist Monochromatic) -->
     <div class="features-card">
       <div class="features-title">
-        <span>🚀</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path>
+          <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path>
+          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"></path>
+          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"></path>
+        </svg>
         <span>Aktivní funkce Browsy Chromium</span>
       </div>
+
       <div class="features-grid">
         <div class="feat-item">
-          <div class="feat-icon">🛡️</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"></path></svg>
+          </div>
           <div class="feat-text">
-            <h4>uBlock Origin & Shields</h4>
-            <p>Integrovaný blokátor reklam, sledovacích skriptů a popunder sítí.</p>
+            <h4>Brave Rust Shields & uBlock</h4>
+            <p>Integrovaný adblock-rust a uBlock Origin (Manifest V2) na úrovni síťového jádra.</p>
           </div>
         </div>
+
         <div class="feat-item">
-          <div class="feat-icon">🚫</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="m4.9 4.9 14.2 14.2"></path></svg>
+          </div>
           <div class="feat-text">
             <h4>Pop-up Blocker</h4>
-            <p>Blokuje nechtěná vyskakovací okna s možností okamžitého povolení.</p>
+            <p>Blokuje nechtěná vyskakovací okna s možností okamžitého povolení pro doménu.</p>
           </div>
         </div>
+
         <div class="feat-item">
-          <div class="feat-icon">🧩</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect></svg>
+          </div>
           <div class="feat-text">
-            <h4>Podpora Manifest V2 & Firefox</h4>
-            <p>Plná kompatibilita s doplňky pro Chrome i Firefox (.xpi).</p>
+            <h4>Manifest V2 & Firefox doplňky</h4>
+            <p>Plná kompatibilita s doplňky pro Chrome (.crx) i Firefox (.xpi) s polyfillem.</p>
           </div>
         </div>
+
         <div class="feat-item">
-          <div class="feat-icon">📹</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><path d="m22 8-6 4 6 4V8Z"></path><rect width="14" height="12" x="2" y="6" rx="2"></rect></svg>
+          </div>
           <div class="feat-text">
             <h4>Stahovač webových videí</h4>
-            <p>Automatická detekce streamů (MP4, HLS, m3u8) se stažením na jedno kliknutí.</p>
+            <p>Automatická detekce streamů (MP4, HLS, m3u8) v nativním Tokio stahovači.</p>
           </div>
         </div>
+
         <div class="feat-item">
-          <div class="feat-icon">📝</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+          </div>
           <div class="feat-text">
             <h4>Text Expander</h4>
-            <p>Rychlé zkratky (:mail, :date, :greet) fungující v libovolném poli na webu.</p>
+            <p>Rychlé zkratky (:mail, :date, :greet) s dynamickou expanzí v Rustu.</p>
           </div>
         </div>
+
         <div class="feat-item">
-          <div class="feat-icon">📑</div>
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+          </div>
           <div class="feat-text">
-            <h4>Vertikální i horizontální taby</h4>
-            <p>Přepínejte styl záložek jedním kliknutím dle svých preferencí.</p>
+            <h4>Zen Workspaces & Taby</h4>
+            <p>Pracovní prostory, kruhový Zen dock a přepínání vertikálních / horizontálních tabů.</p>
           </div>
         </div>
       </div>

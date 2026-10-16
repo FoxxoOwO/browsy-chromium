@@ -1,20 +1,20 @@
 :root {
-  --bg-primary: #121217;
-  --bg-secondary: #1a1a23;
-  --bg-tertiary: #242432;
-  --bg-hover: #2e2e40;
-  --bg-active: #38384f;
-  --accent-color: #6366f1;
-  --accent-hover: #4f46e5;
-  --accent-glow: rgba(99, 102, 241, 0.3);
-  --text-primary: #f3f4f6;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
-  --border-color: #2b2b3a;
-  --border-focus: #6366f1;
+  --bg-primary: #09090b;
+  --bg-secondary: #121216;
+  --bg-tertiary: #18181e;
+  --bg-hover: #22222a;
+  --bg-active: #2e2e38;
+  --accent-color: #f4f4f5;
+  --accent-hover: #ffffff;
+  --accent-glow: rgba(255, 255, 255, 0.12);
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border-color: #27272a;
+  --border-focus: #71717a;
   --danger-color: #ef4444;
-  --success-color: #10b981;
-  --warning-color: #f59e0b;
+  --success-color: #22c55e;
+  --warning-color: #eab308;
   --tab-height: 38px;
   --navbar-height: 44px;
   --sidebar-width: 240px;
@@ -284,31 +284,32 @@ body.layout-vertical #horizontal-tab-bar {
 }
 
 .shields-badge {
-  background-color: rgba(99, 102, 241, 0.15);
-  color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background-color: #18181f;
+  color: #f4f4f5;
+  border: 1px solid #2e2e38;
 }
 .shields-badge:hover {
-  background-color: rgba(99, 102, 241, 0.3);
+  background-color: #22222c;
+  border-color: #4a4a58;
 }
 
 .popup-badge {
-  background-color: rgba(239, 68, 68, 0.15);
+  background-color: #261616;
   color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  border: 1px solid #4a2424;
 }
 .popup-badge:hover {
-  background-color: rgba(239, 68, 68, 0.3);
+  background-color: #351e1e;
 }
 
 .tool-counter-badge {
   position: absolute;
   top: 2px;
   right: 2px;
-  background: var(--danger-color);
-  color: white;
+  background: #f4f4f5;
+  color: #09090b;
   font-size: 9px;
-  font-weight: bold;
+  font-weight: 700;
   border-radius: 8px;
   padding: 1px 4px;
   min-width: 14px;
@@ -378,12 +379,12 @@ body.layout-vertical #vertical-sidebar {
   justify-content: center;
   gap: 8px;
   background-color: var(--accent-color);
-  color: white;
+  color: #09090b;
   border: none;
   border-radius: 6px;
   padding: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }

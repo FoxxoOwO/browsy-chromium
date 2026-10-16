@@ -126,6 +126,12 @@ function setupIPC() {
     settingsManager.set('tabLayout', mode);
     return mode;
   });
+  ipcMain.handle('layout:set-view-visibility', (e, visible) => {
+    if (tabManager) {
+      tabManager.setViewVisibility(visible);
+    }
+    return true;
+  });
 
   // Shields & Adblocker
   ipcMain.handle('shields:get-info', (e) => {
