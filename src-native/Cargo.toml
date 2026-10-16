@@ -1,0 +1,20 @@
+[package]
+name = "browsy-native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2.16", default-features = false, features = ["napi4", "async", "serde-json"] }
+napi-derive = "2.16"
+adblock = "0.13"
+tokio = { version = "1.43", features = ["rt", "macros", "fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.11"
+
+[build-dependencies]
+napi-build = "2.1"

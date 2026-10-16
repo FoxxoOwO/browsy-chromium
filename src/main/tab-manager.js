@@ -90,8 +90,9 @@ class TabManager {
 
     view.webContents.on('did-stop-loading', () => {
       tabRecord.isLoading = false;
-      tabRecord.canGoBack = view.webContents.canGoBack();
-      tabRecord.canGoForward = view.webContents.canGoForward();
+      const history = view.webContents.navigationHistory;
+      tabRecord.canGoBack = history ? history.canGoBack() : view.webContents.canGoBack();
+      tabRecord.canGoForward = history ? history.canGoForward() : view.webContents.canGoForward();
       tabRecord.url = view.webContents.getURL();
       this.notifyTabUpdated(tabRecord);
     });
@@ -263,15 +264,23 @@ class TabManager {
 
   goBack(tabId) {
     const tab = this.tabs.get(tabId);
-    if (tab && tab.view && tab.view.webContents.canGoBack()) {
-      tab.view.webContents.goBack();
+    if (tab && tab.view) {
+      const history = tab.view.webContents.navigationHistory;
+      if (history ? history.canGoBack() : tab.view.webContents.canGoBack()) {
+        if (history && history.goBack) history.goBack();
+        else tab.view.webContents.goBack();
+      }
     }
   }
 
   goForward(tabId) {
     const tab = this.tabs.get(tabId);
-    if (tab && tab.view && tab.view.webContents.canGoForward()) {
-      tab.view.webContents.goForward();
+    if (tab && tab.view) {
+      const history = tab.view.webContents.navigationHistory;
+      if (history ? history.canGoForward() : tab.view.webContents.canGoForward()) {
+        if (history && history.goForward) history.goForward();
+        else tab.view.webContents.goForward();
+      }
     }
   }
 

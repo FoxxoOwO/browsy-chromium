@@ -67,15 +67,43 @@ Moderní, rychlý a na soukromí zaměřený webový prohlížeč postavený na 
 
 ---
 
-## 🛠️ Spuštění prohlížeče
+### 9. ⚡ Nativní Rust NAPI Core (Brave AdBlock Engine & Tokio)
+- Klíčové výkonnostní části prohlížeče jsou napsány v **Rustu** a kompilovány do nativního Node API modulu (`browsy-core.node`):
+  - **Brave Software `adblock-rust`**: Oficiální rychlý Rust engine používaný v prohlížeči Brave, provádí filtrování EasyList / uBlock pravidel v mikrosekundách.
+  - **Asynchronní stream downloader**: Běží na multithreadovém Tokio runtime s efektivním chunk streamingem přes `reqwest`.
+  - **Rust String Expander**: Bleskurychlá tokenizace a expanze šablon textového expandéru.
+
+### 10. 🎨 Moderní UI v Svelte 5 (Runes)
+- Uživatelské rozhraní prohlížeče je napsáno v **Svelte 5** s využitím moderních reaktivních run (`$state`, `$derived`, `$effect`) a bundlováno pomocí Vite.
+- Okamžitá reaktivita při přepínání tabů, animace Zen docku a nízká paměťová stopa.
+
+---
+
+## 🛠️ Spuštění a kompilace prohlížeče
 
 ### Požadavky
 - **Node.js** (v18+)
 - **NPM**
+- **Rust toolchain** (`cargo`, `rustc`) – volitelné, potřebné pouze pro kompilaci Rust jádra ze zdrojových kódů.
 
-### Spuštění ve vývojovém režimu:
+### 1. Spuštění prohlížeče
 ```bash
 npm start
+```
+
+### 2. Sestavení Svelte 5 UI
+```bash
+npm run build:ui
+```
+
+### 3. Sestavení nativního jádra Rust NAPI
+```bash
+npm run build:native
+```
+
+### 4. Kompletní build projektu
+```bash
+npm run build
 ```
 
 ---
@@ -87,22 +115,33 @@ browsy-chromium/
 ├── main.js                  # Hlavní proces Electronu (životní cyklus, IPC handlery)
 ├── preload.js               # Bezpečný IPC bridge pro UI prohlížeče
 ├── content-preload.js       # Preload injektovaný do každé webové stránky (Text Expander, Video sniffer)
+├── browsy-core.node         # Zkompilovaný Rust NAPI modul (Brave adblocker & downloader)
 ├── package.json
+├── vite.config.js           # Konfigurace Vite pro Svelte 5
+├── src-native/              # 🦀 Rust NAPI jádro
+│   ├── Cargo.toml           # Závislosti: adblock (Brave), napi, tokio, reqwest
+│   └── src/
+│       ├── lib.rs           # NAPI bridge a exporty
+│       ├── adblocker.rs     # Implementace Brave adblock-rust enginu
+│       ├── downloader.rs    # Tokio multithreadový downloader
+│       ├── expander.rs      # Rust string template tokenizér
+│       └── default_filters.txt # Bundlovaná EasyList pravidla
+├── src-ui/                  # 🎨 Svelte 5 moderní rozhraní
+│   ├── index.html
+│   └── src/
+│       ├── main.js          # Svelte 5 mount()
+│       └── App.svelte       # Kompletní rozhraní (Zen dock, Omnibox, popovery, taby)
+├── dist-ui/                 # Zkompilovaný produkční bundle Svelte 5 UI
 ├── src/
 │   ├── main/
 │   │   ├── tab-manager.js        # Správa záložek a WebContentsView instancí
 │   │   ├── extension-manager.js  # Kompatibilita Chrome MV2/MV3 a Firefox (.xpi)
-│   │   ├── adblocker.js          # Síťový blokátor reklam a sledovačů (Shields)
+│   │   ├── adblocker.js          # Propojení s nativním Rust blokátorem
 │   │   ├── popup-blocker.js      # Inteligentní blokování vyskakovacích oken
 │   │   ├── video-downloader.js   # Sniffer síťových streamů a stahovač videí
 │   │   ├── text-expander.js      # Zkratky a dynamické proměnné
 │   │   └── settings.js           # Ukládání nastavení do JSON profilu
-│   ├── ui/
-│   │   ├── index.html            # Hlavní rozhraní okna (navigace, taby, popovery)
-│   │   ├── style.css             # Stylování v moderním tmavém designu
-│   │   ├── renderer.js           # UI kontroler a obsluha událostí
-│   │   ├── newtab.html / .js     # Úvodní stránka s rychlým přístupem (Speed Dial)
-│   │   └── extensions.html / .js # Stránka pro správu doplňků (browsy://extensions)
+│   ├── ui/                       # Fallback / statické HTML rozhraní
 │   └── extensions/
 │       ├── ublock-origin/        # Integrovaný uBlock Origin (Manifest V2)
 │       └── firefox-compat/       # WebExtensions polyfill pro Firefox doplňky

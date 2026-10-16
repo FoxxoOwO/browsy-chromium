@@ -4,7 +4,9 @@ const { app } = require('electron');
 
 class SettingsManager {
   constructor() {
-    this.userDataPath = app.getPath('userData');
+    this.userDataPath = (app && typeof app.getPath === 'function') 
+      ? app.getPath('userData') 
+      : path.join(process.cwd(), '.browsy-data');
     this.settingsPath = path.join(this.userDataPath, 'browsy-settings.json');
     this.defaults = {
       tabLayout: 'horizontal', // 'horizontal' | 'vertical'

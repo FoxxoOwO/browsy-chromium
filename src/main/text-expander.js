@@ -1,5 +1,11 @@
+const path = require('path');
 const { clipboard } = require('electron');
 const settingsManager = require('./settings');
+
+let nativeCore = null;
+try {
+  nativeCore = require(path.join(__dirname, '../../browsy-core.node'));
+} catch (e) {}
 
 class TextExpander {
   constructor() {
@@ -60,6 +66,10 @@ class TextExpander {
       clipText = clipboard.readText() || '';
     } catch (e) {
       // clipboard access error fallback
+    }
+
+    if (nativeCore && nativeCore.nativeExpandText) {
+      return nativeCore.nativeExpandText(text, dateStr, timeStr, yearStr, clipText);
     }
 
     return text

@@ -61,8 +61,11 @@ async function createWindow() {
     }
   );
 
-  // Load the browser chrome UI
-  await mainWindow.loadFile(path.join(__dirname, 'src/ui/index.html'));
+  // Load the browser chrome UI (Svelte 5 modern build or fallback)
+  const svelteDist = path.join(__dirname, 'dist-ui/index.html');
+  const uiPath = fs.existsSync(svelteDist) ? svelteDist : path.join(__dirname, 'src/ui/index.html');
+  console.log(`[Browsy] Loading UI from: ${uiPath}`);
+  await mainWindow.loadFile(uiPath);
 
   // Open first tab with newtab
   tabManager.createTab('browsy://newtab');
@@ -77,6 +80,13 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  if (process.env.BROWSY_TEST_EXIT) {
+    console.log('[Browsy Test] Window & tabs launched cleanly. Exiting due to BROWSY_TEST_EXIT.');
+    setTimeout(() => {
+      app.quit();
+    }, 1500);
+  }
 }
 
 // -------------------------------------------------------------

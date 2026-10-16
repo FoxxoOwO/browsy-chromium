@@ -1,10 +1,20 @@
+const path = require('path');
 const { session } = require('electron');
 const settingsManager = require('./settings');
+
+let nativeCore = null;
+try {
+  nativeCore = require(path.join(__dirname, '../../browsy-core.node'));
+  console.log('[AdBlocker] Native Rust adblock-rust core loaded:', nativeCore.getRustCoreVersion());
+} catch (e) {
+  console.warn('[AdBlocker] Native Rust core not loaded, using JS engine:', e.message);
+}
 
 class AdBlocker {
   constructor() {
     this.statsByTab = new Map(); // tabId -> count
     this.totalBlocked = 0;
+    this.nativeBlocker = (nativeCore && nativeCore.NativeAdBlocker) ? new nativeCore.NativeAdBlocker() : null;
     this.adPatterns = [
       // Major ad networks & exchanges
       /doubleclick\.net/,
@@ -84,8 +94,8 @@ class AdBlocker {
         return callback({ cancel: false });
       }
 
-      // Check against ad patterns
-      if (this.matchesAdPattern(details.url)) {
+      // Check against ad patterns using Rust Brave engine
+      if (this.matchesAdPattern(details.url, details.referrer || '', details.resourceType || 'other')) {
         this.totalBlocked++;
         const tabId = details.webContentsId || details.tabId;
         if (tabId) {
@@ -99,7 +109,10 @@ class AdBlocker {
     });
   }
 
-  matchesAdPattern(url) {
+  matchesAdPattern(url, sourceUrl = '', requestType = 'other') {
+    if (this.nativeBlocker) {
+      return this.nativeBlocker.shouldBlock(url, sourceUrl, requestType);
+    }
     return this.adPatterns.some(pattern => pattern.test(url));
   }
 
