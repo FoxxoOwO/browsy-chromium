@@ -235,6 +235,17 @@ function setupIPC() {
   ipcMain.handle('extensions:remove', async (e, id) => {
     return await extensionManager.removeExtension(id);
   });
+  ipcMain.handle('extensions:detect-store-url', (e, url) => {
+    return extensionManager.detectStoreUrl(url);
+  });
+  ipcMain.handle('extensions:install-from-store', async (e, store, idOrSlug, title) => {
+    try {
+      const res = await extensionManager.installFromStore(store, idOrSlug, title);
+      return res;
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
   // Settings
   ipcMain.handle('settings:get-all', () => {

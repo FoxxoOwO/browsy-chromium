@@ -6,15 +6,18 @@
   <title>Doplňky - Browsy Chromium</title>
   <style>
     :root {
-      --bg: #111116;
-      --card-bg: #1c1c24;
-      --border: #2a2a38;
-      --text: #f3f4f6;
-      --text-muted: #8b8ea4;
-      --accent: #6366f1;
-      --accent-hover: #4f46e5;
-      --danger: #ef4444;
-      --success: #10b981;
+      --bg: #09090b;
+      --card-bg: #121214;
+      --card-hover: #18181b;
+      --border: #27272a;
+      --border-focus: #3f3f46;
+      --text: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --btn-bg: #202026;
+      --btn-hover: #27272f;
+      --btn-primary-bg: #f4f4f5;
+      --btn-primary-text: #09090b;
+      --btn-primary-hover: #e4e4e7;
     }
 
     * {
@@ -27,8 +30,10 @@
     body {
       background-color: var(--bg);
       color: var(--text);
-      padding: 30px 40px;
+      padding: 40px 48px;
       min-height: 100vh;
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
     .header {
@@ -43,12 +48,19 @@
     .title-group {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
+    }
+
+    .title-icon {
+      width: 32px;
+      height: 32px;
+      color: var(--text);
     }
 
     .title-group h1 {
       font-size: 24px;
       font-weight: 700;
+      letter-spacing: -0.5px;
     }
 
     .action-group {
@@ -60,26 +72,111 @@
       padding: 10px 16px;
       border-radius: 8px;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
       cursor: pointer;
-      display: flex;
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
       transition: all 0.15s ease;
-      border: none;
+      border: 1px solid var(--border);
+      background-color: var(--btn-bg);
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background-color: var(--btn-hover);
+      border-color: var(--border-focus);
     }
 
     .btn-primary {
-      background-color: var(--accent);
-      color: white;
+      background-color: var(--btn-primary-bg);
+      color: var(--btn-primary-text);
+      border-color: var(--btn-primary-bg);
+      font-weight: 600;
     }
     .btn-primary:hover {
-      background-color: var(--accent-hover);
+      background-color: var(--btn-primary-hover);
+      border-color: var(--btn-primary-hover);
+    }
+
+    /* Store Section */
+    .stores-section {
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .stores-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .store-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.2s, background-color 0.2s;
+    }
+
+    .store-card:hover {
+      border-color: var(--border-focus);
+      background: var(--card-hover);
+    }
+
+    .store-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .store-icon {
+      width: 24px;
+      height: 24px;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .store-card-name {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .store-card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .store-badge {
+      align-self: flex-start;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: #202026;
+      border: 1px solid #33333d;
+      color: #d4d4d8;
     }
 
     .banner-compat {
-      background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.1));
-      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: var(--card-bg);
+      border: 1px solid var(--border);
       border-radius: 12px;
       padding: 16px 20px;
       margin-bottom: 28px;
@@ -89,13 +186,16 @@
     }
 
     .banner-icon {
-      font-size: 32px;
+      width: 28px;
+      height: 28px;
+      color: var(--text);
+      flex-shrink: 0;
     }
 
     .banner-text h3 {
       font-size: 14px;
       font-weight: 600;
-      color: #a5b4fc;
+      color: var(--text);
     }
 
     .banner-text p {
@@ -103,6 +203,15 @@
       color: var(--text-muted);
       margin-top: 4px;
       line-height: 1.4;
+    }
+
+    .banner-text code {
+      font-family: monospace;
+      background: #202026;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      color: #e4e4e7;
     }
 
     .extensions-grid {
@@ -119,11 +228,12 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      transition: border-color 0.2s ease;
+      transition: border-color 0.2s ease, background-color 0.2s ease;
     }
 
     .ext-card:hover {
-      border-color: #3f3f55;
+      border-color: var(--border-focus);
+      background-color: var(--card-hover);
     }
 
     .ext-card-top {
@@ -132,14 +242,15 @@
     }
 
     .ext-icon {
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       border-radius: 10px;
-      background-color: var(--border);
+      background-color: var(--btn-bg);
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 24px;
+      color: var(--text);
       flex-shrink: 0;
     }
 
@@ -160,6 +271,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      color: var(--text);
     }
 
     .ext-ver {
@@ -186,34 +298,21 @@
 
     .tag {
       font-size: 10px;
-      font-weight: 600;
-      padding: 2px 6px;
+      font-weight: 500;
+      padding: 2px 8px;
       border-radius: 4px;
       text-transform: uppercase;
+      letter-spacing: 0.4px;
+      background: #202026;
+      border: 1px solid #33333d;
+      color: #d4d4d8;
     }
 
     .tag-builtin {
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    .tag-firefox {
-      background: rgba(245, 158, 11, 0.15);
-      color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.3);
-    }
-
-    .tag-chrome {
-      background: rgba(99, 102, 241, 0.15);
-      color: #a5b4fc;
-      border: 1px solid rgba(99, 102, 241, 0.3);
-    }
-
-    .tag-mv2 {
-      background: rgba(236, 72, 153, 0.15);
-      color: #f472b6;
-      border: 1px solid rgba(236, 72, 153, 0.3);
+      border-color: #3f3f46;
+      background: #27272a;
+      color: #ffffff;
+      font-weight: 600;
     }
 
     .ext-card-bottom {
@@ -229,57 +328,121 @@
     .switch {
       position: relative;
       display: inline-block;
-      width: 40px;
-      height: 22px;
+      width: 38px;
+      height: 20px;
     }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
       position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #333344; transition: 0.2s; border-radius: 22px;
+      background-color: #27272a; transition: 0.2s; border-radius: 20px;
+      border: 1px solid var(--border);
     }
     .slider:before {
-      position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
-      background-color: white; transition: 0.2s; border-radius: 50%;
+      position: absolute; content: ""; height: 14px; width: 14px; left: 2px; bottom: 2px;
+      background-color: #a1a1aa; transition: 0.2s; border-radius: 50%;
     }
-    input:checked + .slider { background-color: var(--accent); }
-    input:checked + .slider:before { transform: translateX(18px); }
+    input:checked + .slider {
+      background-color: #3f3f46;
+    }
+    input:checked + .slider:before {
+      transform: translateX(18px);
+      background-color: #ffffff;
+    }
 
     .btn-danger {
       background: transparent;
-      border: 1px solid #4a2525;
-      color: #f87171;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
       padding: 6px 12px;
       border-radius: 6px;
       font-size: 12px;
       cursor: pointer;
+      transition: all 0.15s ease;
     }
     .btn-danger:hover {
-      background: #3b1818;
-      color: #ef4444;
+      border-color: #71717a;
+      color: #ffffff;
+      background: #27272a;
     }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="title-group">
-      <span style="font-size: 28px;">🧩</span>
-      <h1>Správa doplňků (Chrome & Firefox)</h1>
+      <svg class="title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect width="7" height="7" x="3" y="3" rx="1"></rect>
+        <rect width="7" height="7" x="14" y="3" rx="1"></rect>
+        <rect width="7" height="7" x="14" y="14" rx="1"></rect>
+        <rect width="7" height="7" x="3" y="14" rx="1"></rect>
+      </svg>
+      <h1>Správa doplňků</h1>
     </div>
     <div class="action-group">
       <button id="btn-install" class="btn btn-primary">
-        <span>➕ Nainstalovat doplněk (.crx / .xpi / .zip)</span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>Nainstalovat ze souboru (.crx / .xpi / .zip)</span>
       </button>
     </div>
   </div>
 
-  <div class="banner-compat">
-    <div class="banner-icon">🛡️</div>
-    <div class="banner-text">
-      <h3>Plná podpora Manifest V2 a Firefox WebExtensions (.xpi)</h3>
-      <p>Tento prohlížeč zachovává nativní podporu pro doplňky Manifest V2 i moderní Manifest V3. Soubory doplňků z Firefoxu (.xpi) jsou automaticky adaptovány s podporou API <code>browser.*</code>.</p>
+  <!-- Store Catalogs -->
+  <div class="stores-section">
+    <div class="section-title">Oficiální katalogy doplňků</div>
+    <div class="stores-grid">
+      <a href="https://chromewebstore.google.com" target="_blank" class="store-card">
+        <div class="store-card-header">
+          <svg class="store-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <div class="store-card-name">Chrome Web Store</div>
+        </div>
+        <div class="store-card-desc">Nejrozsáhlejší katalog doplňků pro Chromium. Otevřete detail kteréhokoliv doplňku a nainstalujte jej 1 kliknutím.</div>
+        <div class="store-badge">Přímá instalace 1 klikem</div>
+      </a>
+
+      <a href="https://addons.opera.com/extensions/" target="_blank" class="store-card">
+        <div class="store-card-header">
+          <svg class="store-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="7" height="7" x="3" y="3" rx="1"></rect>
+            <rect width="7" height="7" x="14" y="3" rx="1"></rect>
+            <rect width="7" height="7" x="14" y="14" rx="1"></rect>
+            <rect width="7" height="7" x="3" y="14" rx="1"></rect>
+          </svg>
+          <div class="store-card-name">Opera Add-ons</div>
+        </div>
+        <div class="store-card-desc">Oficiální repozitář Opery. Podpora přímého stažení a automatické instalace balíčků doplňků.</div>
+        <div class="store-badge">Přímá instalace 1 klikem</div>
+      </a>
+
+      <a href="https://addons.mozilla.org/firefox/extensions/" target="_blank" class="store-card">
+        <div class="store-card-header">
+          <svg class="store-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <div class="store-card-name">Firefox Add-ons (AMO)</div>
+        </div>
+        <div class="store-card-desc">Mozilla Firefox doplňky (.xpi) jsou automaticky adaptovány a obohaceny o polyfill pro rozhraní <code>browser.*</code>.</div>
+        <div class="store-badge">Přímá instalace 1 klikem</div>
+      </a>
     </div>
   </div>
 
+  <div class="banner-compat">
+    <svg class="banner-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+    </svg>
+    <div class="banner-text">
+      <h3>Plná podpora Manifest V2, Manifest V3 a Firefox WebExtensions (.xpi)</h3>
+      <p>Browsy Chromium zachovává nativní podporu pro doplňky Manifest V2 i moderní Manifest V3. Soubory doplňků z Firefoxu (.xpi) a balíčky z Opery jsou automaticky adaptovány a načteny do jádra.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Nainstalované doplňky</div>
   <div id="extensions-container" class="extensions-grid">
     <!-- Dynamic Cards -->
   </div>

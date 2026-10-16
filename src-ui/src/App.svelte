@@ -22,10 +22,13 @@
   let detectedVideos = $state([]);
   let expanderConfig = $state({ enabled: true, snippets: [] });
   let extensionsList = $state([]);
-  let settingsData = $state({});
-
   let activePopover = $state(null); // 'shields' | 'video' | 'popups' | 'expander' | 'extensions' | 'workspace' | null
   let showWorkspaceModal = $state(false);
+
+  // Store Extension Detection State
+  let activeStoreInfo = $state(null);
+  let isInstallingStoreExt = $state(false);
+  let storeInstallSuccess = $state(false);
 
   // New Workspace Form
   let newWsName = $state('');
@@ -157,6 +160,8 @@
       blockedAdsCount = data.blockedAds || 0;
       blockedPopups = data.blockedPopups || [];
       detectedVideos = data.detectedMedia || [];
+      activeStoreInfo = data.storeInfo && data.storeInfo.isStore ? data.storeInfo : null;
+      storeInstallSuccess = false;
       setTimeout(syncViewport, 30);
     });
 
@@ -169,6 +174,7 @@
         canGoBack = tab.canGoBack;
         canGoForward = tab.canGoForward;
         omniboxValue = formatOmniboxDisplay(tab.url);
+        activeStoreInfo = tab.storeInfo && tab.storeInfo.isStore ? tab.storeInfo : null;
       }
     });
 
@@ -256,6 +262,33 @@
       api.switchTab(existing.id);
     } else {
       api.createTab('browsy://settings', { workspaceId: activeWorkspaceId });
+    }
+  }
+
+  function createTabWithUrl(url) {
+    if (api) api.createTab(url, { workspaceId: activeWorkspaceId });
+  }
+
+  async function installActiveStoreExtension() {
+    if (!activeStoreInfo || !api || isInstallingStoreExt) return;
+    isInstallingStoreExt = true;
+    storeInstallSuccess = false;
+
+    try {
+      const res = await api.installFromStore(activeStoreInfo.store, activeStoreInfo.id, '');
+      if (res.success) {
+        storeInstallSuccess = true;
+        loadExtensions();
+        setTimeout(() => {
+          storeInstallSuccess = false;
+        }, 3000);
+      } else {
+        alert('Chyba při instalaci: ' + (res.error || 'Neznámá chyba'));
+      }
+    } catch (e) {
+      alert('Chyba: ' + e.message);
+    } finally {
+      isInstallingStoreExt = false;
     }
   }
 
@@ -378,6 +411,23 @@
           onkeydown={(e) => { if (e.key === 'Enter') navigate(omniboxValue); }}
         />
         <div class="omnibox-badges">
+          {#if activeStoreInfo}
+            <button
+              class="badge-btn store-badge"
+              onclick={installActiveStoreExtension}
+              title={`Instalovat doplněk z ${activeStoreInfo.storeName}`}
+              disabled={isInstallingStoreExt}
+            >
+              {#if isInstallingStoreExt}
+                <span>Instaluji...</span>
+              {:else if storeInstallSuccess}
+                <span>✔ Přidáno!</span>
+              {:else}
+                <Icon name="plus" size={12} />
+                <span>Přidat do Browsy</span>
+              {/if}
+            </button>
+          {/if}
           {#if blockedPopups.length > 0}
             <button class="badge-btn popup-badge" onclick={() => togglePopover('popups')} title="Zablokovaná vyskakovací okna">
               <Icon name="ban" size={13} />
@@ -663,6 +713,22 @@
         <button class="secondary-btn full-width" style="margin-top: 8px;" onclick={() => { navigate('browsy://extensions'); activePopover = null; }}>
           Spravovat doplňky
         </button>
+
+        <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-top:14px; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Katalogy doplňků</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://chromewebstore.google.com'); activePopover = null; }}>
+            <Icon name="globe" size={14} />
+            <span style="margin-left:8px;">Chrome Web Store</span>
+          </button>
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.opera.com/extensions/'); activePopover = null; }}>
+            <Icon name="extensions" size={14} />
+            <span style="margin-left:8px;">Opera Add-ons Store</span>
+          </button>
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.mozilla.org/firefox/extensions/'); activePopover = null; }}>
+            <Icon name="star" size={14} />
+            <span style="margin-left:8px;">Firefox Add-ons (AMO)</span>
+          </button>
+        </div>
         <div style="margin-top:12px;">
           {#each extensionsList as ext}
             <div class="snippet-row">

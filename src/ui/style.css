@@ -283,6 +283,19 @@ body.layout-vertical #horizontal-tab-bar {
   transition: all 0.15s ease;
 }
 
+.store-badge {
+  background-color: #f4f4f5;
+  color: #09090b;
+  border: 1px solid #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.store-badge:hover {
+  background-color: #e4e4e7;
+}
+
 .shields-badge {
   background-color: #18181f;
   color: #f4f4f5;

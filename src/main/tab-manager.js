@@ -4,6 +4,7 @@ const popupBlocker = require('./popup-blocker');
 const videoDownloader = require('./video-downloader');
 const adBlocker = require('./adblocker');
 const textExpander = require('./text-expander');
+const extensionManager = require('./extension-manager');
 const settingsManager = require('./settings');
 
 class TabManager {
@@ -79,6 +80,7 @@ class TabManager {
       isMuted: false,
       isPinned: !!options.pinned,
       workspaceId: options.workspaceId || this.activeWorkspaceId,
+      storeInfo: extensionManager.detectStoreUrl(initialUrl),
       view: view,
       webContentsId: view.webContents.id
     };
@@ -101,6 +103,7 @@ class TabManager {
       tabRecord.canGoBack = history ? history.canGoBack() : view.webContents.canGoBack();
       tabRecord.canGoForward = history ? history.canGoForward() : view.webContents.canGoForward();
       tabRecord.url = view.webContents.getURL();
+      tabRecord.storeInfo = extensionManager.detectStoreUrl(tabRecord.url);
       this.notifyTabUpdated(tabRecord);
     });
 
@@ -336,7 +339,8 @@ class TabManager {
       canGoForward: tab.canGoForward,
       isAudioPlaying: tab.isAudioPlaying,
       isMuted: tab.isMuted,
-      isPinned: tab.isPinned
+      isPinned: tab.isPinned,
+      storeInfo: tab.storeInfo || { isStore: false }
     });
   }
 
@@ -350,6 +354,7 @@ class TabManager {
       canGoForward: tab.canGoForward,
       isLoading: tab.isLoading,
       isMuted: tab.isMuted,
+      storeInfo: tab.storeInfo || { isStore: false },
       blockedAds: adBlocker.getStatsForTab(tab.webContentsId),
       blockedPopups: popupBlocker.getBlockedPopups(tab.webContentsId),
       detectedMedia: videoDownloader.getMediaForTab(tab.webContentsId)

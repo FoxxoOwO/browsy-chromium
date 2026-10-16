@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   // Extensions (Chrome MV2/MV3 & Firefox)
   getExtensions: () => ipcRenderer.invoke('extensions:get-all'),
   pickAndInstallExtension: () => ipcRenderer.invoke('extensions:pick-install'),
+  installFromStore: (store, idOrSlug, title) => ipcRenderer.invoke('extensions:install-from-store', store, idOrSlug, title),
+  detectStoreUrl: (url) => ipcRenderer.invoke('extensions:detect-store-url', url),
   toggleExtension: (id, enabled) => ipcRenderer.invoke('extensions:toggle', id, enabled),
   removeExtension: (id) => ipcRenderer.invoke('extensions:remove', id),
 

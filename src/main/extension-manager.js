@@ -5,7 +5,7 @@ const { app, session, dialog } = require('electron');
 
 class ExtensionManager {
   constructor() {
-    this.userDataPath = app.getPath('userData');
+    this.userDataPath = (app && typeof app.getPath === 'function') ? app.getPath('userData') : path.join(process.cwd(), '.browsy-data');
     this.extensionsDir = path.join(this.userDataPath, 'extensions');
     this.registryPath = path.join(this.userDataPath, 'extensions-registry.json');
     this.compatPolyfillPath = path.join(__dirname, '../extensions/firefox-compat/browser-polyfill.js');
@@ -101,31 +101,80 @@ class ExtensionManager {
   }
 
   /**
-   * Install extension from a folder, .crx, .zip, or .xpi file.
+   * Converts a CRX (Chrome/Opera) buffer to a standard ZIP buffer by stripping headers.
    */
-  async installFromFile(filePath) {
-    if (!fs.existsSync(filePath)) {
-      throw new Error('Soubor doplňku neexistuje: ' + filePath);
+  crxToZipBuffer(buf) {
+    if (buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) {
+      return buf;
+    }
+    const pkIndex = buf.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    if (pkIndex !== -1) {
+      return buf.subarray(pkIndex);
+    }
+    return buf;
+  }
+
+  /**
+   * Detects whether a URL belongs to Chrome Web Store, Opera Add-ons, or Firefox AMO.
+   */
+  detectStoreUrl(url) {
+    if (!url || typeof url !== 'string') return { isStore: false };
+
+    // 1. Chrome Web Store
+    const chromeMatch = url.match(/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\/(?:[^\/]+\/)?([a-p]{32})/i);
+    if (chromeMatch) {
+      return {
+        isStore: true,
+        store: 'chrome',
+        id: chromeMatch[1].toLowerCase(),
+        storeName: 'Chrome Web Store'
+      };
     }
 
-    const ext = path.extname(filePath).toLowerCase();
-    const isZip = ext === '.zip' || ext === '.crx' || ext === '.xpi';
-    const isFirefox = ext === '.xpi';
+    // 2. Opera Add-ons
+    const operaMatch = url.match(/addons\.opera\.com\/(?:[a-zA-Z-]+\/)?extensions\/details\/([a-zA-Z0-9_-]+)/i);
+    if (operaMatch) {
+      return {
+        isStore: true,
+        store: 'opera',
+        id: operaMatch[1],
+        storeName: 'Opera Add-ons'
+      };
+    }
+
+    // 3. Firefox Add-ons (AMO)
+    const firefoxMatch = url.match(/addons\.mozilla\.org\/(?:[a-zA-Z-]+\/)?firefox\/addon\/([a-zA-Z0-9_-]+)/i);
+    if (firefoxMatch) {
+      return {
+        isStore: true,
+        store: 'firefox',
+        id: firefoxMatch[1],
+        storeName: 'Firefox Add-ons'
+      };
+    }
+
+    return { isStore: false };
+  }
+
+  /**
+   * Install extension from memory Buffer (CRX, ZIP, XPI).
+   */
+  async installFromBuffer(buffer, filename = 'extension.crx', source = 'chrome') {
+    const isFirefox = source === 'firefox' || filename.endsWith('.xpi');
+    const zipBuffer = this.crxToZipBuffer(buffer);
 
     const tempExtId = 'ext_' + Date.now();
     const targetDir = path.join(this.extensionsDir, tempExtId);
     fs.mkdirSync(targetDir, { recursive: true });
 
-    if (isZip) {
-      const zip = new AdmZip(filePath);
+    try {
+      const zip = new AdmZip(zipBuffer);
       zip.extractAllTo(targetDir, true);
-    } else if (fs.statSync(filePath).isDirectory()) {
-      this.copyDirRecursive(filePath, targetDir);
-    } else {
-      throw new Error('Nepodporovaný formát doplňku. Podporovány jsou .crx, .zip, .xpi a složky.');
+    } catch (e) {
+      fs.rmSync(targetDir, { recursive: true, force: true });
+      throw new Error('Chyba při rozbalování archivu doplňku: ' + e.message);
     }
 
-    // Inspect and transpile manifest if necessary
     const manifestPath = path.join(targetDir, 'manifest.json');
     if (!fs.existsSync(manifestPath)) {
       fs.rmSync(targetDir, { recursive: true, force: true });
@@ -138,6 +187,25 @@ class ExtensionManager {
     } catch (e) {
       fs.rmSync(targetDir, { recursive: true, force: true });
       throw new Error('Neplatný JSON v manifest.json: ' + e.message);
+    }
+
+    // Resolve name from _locales if __MSG_...__
+    let extName = manifest.name || filename;
+    if (extName && extName.startsWith('__MSG_') && extName.endsWith('__')) {
+      const key = extName.slice(6, -2);
+      const locales = ['cs', 'en_US', 'en_GB', 'en'];
+      for (const loc of locales) {
+        const msgPath = path.join(targetDir, '_locales', loc, 'messages.json');
+        if (fs.existsSync(msgPath)) {
+          try {
+            const msgs = JSON.parse(fs.readFileSync(msgPath, 'utf8'));
+            if (msgs[key] && msgs[key].message) {
+              extName = msgs[key].message;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
     }
 
     // Adapt Firefox extension for Chromium if needed
@@ -153,11 +221,11 @@ class ExtensionManager {
 
       const record = {
         id: finalId,
-        name: manifest.name || path.basename(filePath),
+        name: extName,
         version: manifest.version || '1.0.0',
         description: manifest.description || '',
         manifestVersion: manifest.manifest_version || 2,
-        source: isFirefox ? 'firefox' : 'chrome',
+        source: source,
         path: targetDir,
         enabled: true,
         homepageUrl: manifest.homepage_url || '',
@@ -166,10 +234,141 @@ class ExtensionManager {
 
       this.installedExtensions[finalId] = record;
       this.saveRegistry();
-      return record;
+      console.log(`[ExtensionManager] Successfully installed from ${source}: ${record.name} (${finalId})`);
+      return { success: true, extension: record };
     } catch (err) {
       fs.rmSync(targetDir, { recursive: true, force: true });
       throw new Error('Chyba při načítání doplňku do Chromia: ' + err.message);
+    }
+  }
+
+  /**
+   * Installs extension directly from Chrome Web Store, Opera Add-ons, or Firefox AMO.
+   */
+  async installFromStore(store, idOrSlug, title = '') {
+    console.log(`[ExtensionManager] Installing from ${store}: ${idOrSlug}`);
+
+    if (store === 'chrome') {
+      const match = idOrSlug.match(/[a-p]{32}/i);
+      const extId = match ? match[0].toLowerCase() : idOrSlug.toLowerCase();
+      const downloadUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D${extId}%26uc`;
+      const res = await fetch(downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Chrome Web Store vrátil chybu HTTP ${res.status}`);
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return await this.installFromBuffer(buffer, `${extId}.crx`, 'chrome');
+    }
+
+    if (store === 'opera') {
+      const slug = idOrSlug.replace(/[^a-zA-Z0-9_-]/g, '');
+      const downloadUrl = `https://addons.opera.com/extensions/download/${slug}/`;
+      const res = await fetch(downloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/114.0.0.0'
+        }
+      });
+      if (!res.ok) {
+        throw new Error(`Opera Add-ons vrátil chybu HTTP ${res.status}`);
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return await this.installFromBuffer(buffer, `${slug}.crx`, 'opera');
+    }
+
+    if (store === 'firefox') {
+      let xpiUrl = '';
+      let addonName = title || idOrSlug;
+
+      if (idOrSlug.startsWith('http://') || idOrSlug.startsWith('https://')) {
+        xpiUrl = idOrSlug;
+      } else {
+        const slug = idOrSlug.replace(/[^a-zA-Z0-9_-]/g, '');
+        const apiUrl = `https://addons.mozilla.org/api/v5/addons/addon/${slug}/`;
+        const apiRes = await fetch(apiUrl, {
+          headers: { 'Accept': 'application/json' }
+        });
+        if (!apiRes.ok) {
+          throw new Error(`Mozilla AMO API vrátilo chybu HTTP ${apiRes.status}`);
+        }
+        const data = await apiRes.json();
+        addonName = data.name?.cs || data.name?.['en-US'] || (typeof data.name === 'string' ? data.name : slug);
+        xpiUrl = data.current_version?.file?.url;
+        if (!xpiUrl) {
+          throw new Error('Mozilla AMO neposkytlo platný odkaz na stažení .xpi souboru.');
+        }
+      }
+
+      const xpiRes = await fetch(xpiUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0'
+        }
+      });
+      if (!xpiRes.ok) {
+        throw new Error(`Chyba při stahování XPI souboru: HTTP ${xpiRes.status}`);
+      }
+      const buffer = Buffer.from(await xpiRes.arrayBuffer());
+      return await this.installFromBuffer(buffer, `${addonName}.xpi`, 'firefox');
+    }
+
+    throw new Error(`Neznámý store: ${store}`);
+  }
+
+  /**
+   * Install extension from a folder, .crx, .zip, or .xpi file.
+   */
+  async installFromFile(filePath) {
+    if (!fs.existsSync(filePath)) {
+      throw new Error('Soubor doplňku neexistuje: ' + filePath);
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const isZip = ext === '.zip' || ext === '.crx' || ext === '.xpi';
+
+    if (isZip) {
+      const buffer = fs.readFileSync(filePath);
+      const res = await this.installFromBuffer(buffer, path.basename(filePath), ext === '.xpi' ? 'firefox' : 'chrome');
+      return res.extension;
+    } else if (fs.statSync(filePath).isDirectory()) {
+      const tempExtId = 'ext_' + Date.now();
+      const targetDir = path.join(this.extensionsDir, tempExtId);
+      fs.mkdirSync(targetDir, { recursive: true });
+      this.copyDirRecursive(filePath, targetDir);
+
+      const manifestPath = path.join(targetDir, 'manifest.json');
+      if (!fs.existsSync(manifestPath)) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+        throw new Error('V doplňku chybí soubor manifest.json.');
+      }
+
+      let manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      if (manifest.browser_specific_settings || manifest.applications) {
+        manifest = this.adaptFirefoxManifest(manifest, targetDir);
+        fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+      }
+
+      const loaded = await this.loadExt(targetDir, { allowFileAccess: true });
+      const finalId = loaded.id || tempExtId;
+      const record = {
+        id: finalId,
+        name: manifest.name || path.basename(filePath),
+        version: manifest.version || '1.0.0',
+        description: manifest.description || '',
+        manifestVersion: manifest.manifest_version || 2,
+        source: 'chrome',
+        path: targetDir,
+        enabled: true,
+        homepageUrl: manifest.homepage_url || '',
+        icons: manifest.icons || {}
+      };
+      this.installedExtensions[finalId] = record;
+      this.saveRegistry();
+      return record;
+    } else {
+      throw new Error('Nepodporovaný formát doplňku. Podporovány jsou .crx, .zip, .xpi a složky.');
     }
   }
 
