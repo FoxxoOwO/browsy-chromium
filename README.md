@@ -54,6 +54,17 @@ Moderní, rychlý a na soukromí zaměřený webový prohlížeč postavený na 
 - Možnost sbalení vertikálního panelu na kompaktní ikony (58 px) nebo rozbalení na plný název (240 px).
 - Podpora indikace přehrávání zvuku, ztlumení (mute) záložky a zavírání.
 
+### 8. 🧘 Pracovní prostory (Workspaces ve stylu Zen Browser)
+- Oddělte své taby do samostatných tematických prostorů (např. *👤 Osobní*, *💼 Práce*, *⚡ Vývoj*, *🎓 Škola*, *🎮 Hry*).
+- **Zen Workspace Dock**: Kruhová tlačítka ve spodní části postranního panelu s vlastním barevným podsvícením a ikonami.
+- **Okamžité přepínání**:
+  - Kliknutím na ikonu v Zen docku.
+  - Rolováním kolečkem myši nad spodním panelem prostorů.
+  - Klávesovou zkratkou `Alt + 1`, `Alt + 2`, atd.
+  - Přes rozbalovací menu na horní liště.
+- **Přesouvání tabů**: Klikněte pravým tlačítkem myši na libovolnou záložku a zvolte *Přesunout do prostoru ❯*.
+- **Vlastní přizpůsobení**: Vytváření nových prostorů s výběrem emoji ikony a barevného akcentu.
+
 ---
 
 ## 🛠️ Spuštění prohlížeče
@@ -109,4 +120,6 @@ browsy-chromium/
 | `Ctrl + L` | Označit adresní řádek (Omnibox) |
 | `Alt + Vlevo` | Přejít zpět |
 | `Alt + Vpravo` | Přejít vpřed |
+| `Alt + 1` až `9` | Rychlé přepnutí pracovního prostoru (Workspace) |
+| `Kolečko myši` nad spodním panelem | Plynulé cyklování mezi pracovními prostory |
 | `Esc` | Zavřít otevřené panely / nastavení |

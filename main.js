@@ -96,6 +96,15 @@ function setupIPC() {
   ipcMain.handle('tabs:toggle-pin', (e, tabId) => tabManager.togglePinTab(tabId));
   ipcMain.handle('tabs:get-list', () => tabManager.getTabsList());
 
+  // Workspaces (Zen Browser style)
+  ipcMain.handle('workspaces:get-all', () => tabManager.getWorkspaces());
+  ipcMain.handle('workspaces:get-active', () => tabManager.activeWorkspaceId);
+  ipcMain.handle('workspaces:switch', (e, id) => tabManager.switchWorkspace(id));
+  ipcMain.handle('workspaces:create', (e, name, icon, color) => tabManager.createWorkspace(name, icon, color));
+  ipcMain.handle('workspaces:update', (e, id, data) => tabManager.updateWorkspace(id, data));
+  ipcMain.handle('workspaces:delete', (e, id) => tabManager.deleteWorkspace(id));
+  ipcMain.handle('workspaces:move-tab', (e, tabId, targetWsId) => tabManager.moveTabToWorkspace(tabId, targetWsId));
+
   // Layout & Bounds
   ipcMain.handle('layout:update-bounds', (e, bounds) => {
     if (tabManager) {

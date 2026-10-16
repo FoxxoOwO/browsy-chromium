@@ -1,5 +1,6 @@
 // =========================================================
 // Browsy Chromium UI Controller (renderer.js)
+// With Zen Browser-style Workspaces Support
 // =========================================================
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,7 +18,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentDomain = '';
   let activePopover = null;
 
-  // DOM Elements
+  // Workspaces State
+  let workspaces = [];
+  let activeWorkspaceId = 'ws_default';
+  let selectedWsIcon = '📁';
+  let selectedWsColor = '#6366f1';
+  let contextTargetTab = null;
+
+  // DOM Elements - Chrome & Navigation
   const body = document.body;
   const viewport = document.getElementById('web-view-viewport');
   const hTabsContainer = document.getElementById('horizontal-tabs-container');
@@ -44,13 +52,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   const verticalSidebar = document.getElementById('vertical-sidebar');
   const btnCollapseSidebar = document.getElementById('btn-collapse-sidebar');
 
+  // DOM Elements - Workspaces
+  const hWorkspacePill = document.getElementById('horizontal-workspace-pill');
+  const hWsIcon = document.getElementById('h-ws-icon');
+  const hWsName = document.getElementById('h-ws-name');
+  const vWsPill = document.getElementById('v-ws-pill');
+  const vWsIcon = document.getElementById('v-ws-icon');
+  const vWsName = document.getElementById('v-ws-name');
+  const zenWsList = document.getElementById('zen-ws-list');
+  const btnCreateWs = document.getElementById('btn-create-ws');
+  const zenWsDock = document.getElementById('zen-workspace-dock');
+
   // Popovers & Modals
   const popoverShields = document.getElementById('popover-shields');
   const popoverVideo = document.getElementById('popover-video');
   const popoverPopups = document.getElementById('popover-popups');
   const popoverExpander = document.getElementById('popover-expander');
   const popoverExtensions = document.getElementById('popover-extensions');
+  const popoverWorkspaceMenu = document.getElementById('popover-workspace-menu');
+  const workspaceItemsContainer = document.getElementById('workspace-items-container');
+  const btnOpenCreateWsModal = document.getElementById('btn-open-create-ws-modal');
   const modalSettings = document.getElementById('modal-settings');
+
+  // Workspace Create Modal
+  const modalWorkspace = document.getElementById('modal-workspace');
+  const btnCloseWsModal = document.getElementById('btn-close-ws-modal');
+  const inputWsName = document.getElementById('input-ws-name');
+  const wsIconPicker = document.getElementById('ws-icon-picker');
+  const wsColorPicker = document.getElementById('ws-color-picker');
+  const btnSaveWorkspace = document.getElementById('btn-save-workspace');
+
+  // Tab Context Menu
+  const tabContextMenu = document.getElementById('tab-context-menu');
+  const ctxWorkspacesSubmenu = document.getElementById('ctx-workspaces-submenu');
+  const ctxDuplicateTab = document.getElementById('ctx-duplicate-tab');
+  const ctxPinTab = document.getElementById('ctx-pin-tab');
+  const ctxMuteTab = document.getElementById('ctx-mute-tab');
+  const ctxCloseTab = document.getElementById('ctx-close-tab');
 
   // -------------------------------------------------------------
   // Viewport Bounds Sync
@@ -102,22 +140,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // -------------------------------------------------------------
-  // Tabs Rendering
+  // Tabs Rendering (Filtered by Active Workspace)
   // -------------------------------------------------------------
   function renderTabs() {
+    const visibleTabs = currentTabs.filter(t => !t.workspaceId || t.workspaceId === activeWorkspaceId);
+
     // Render Horizontal Tabs
     hTabsContainer.innerHTML = '';
-    currentTabs.forEach((tab) => {
+    visibleTabs.forEach((tab) => {
       const tabEl = createTabElement(tab, 'h');
       hTabsContainer.appendChild(tabEl);
     });
 
     // Render Vertical Tabs
     vTabsContainer.innerHTML = '';
-    currentTabs.forEach((tab) => {
+    visibleTabs.forEach((tab) => {
       const tabEl = createTabElement(tab, 'v');
       vTabsContainer.appendChild(tabEl);
     });
+
+    updateWorkspacesUI();
   }
 
   function createTabElement(tab, type) {
@@ -176,11 +218,233 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    // Right-click context menu (Move to workspace, Pin, Mute, Duplicate)
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      openTabContextMenu(e, tab);
+    });
+
     return el;
   }
 
-  hNewTabBtn.addEventListener('click', () => api.createTab('browsy://newtab'));
-  vNewTabBtn.addEventListener('click', () => api.createTab('browsy://newtab'));
+  hNewTabBtn.addEventListener('click', () => api.createTab('browsy://newtab', { workspaceId: activeWorkspaceId }));
+  vNewTabBtn.addEventListener('click', () => api.createTab('browsy://newtab', { workspaceId: activeWorkspaceId }));
+
+  // -------------------------------------------------------------
+  // Zen Browser Workspaces Logic & UI
+  // -------------------------------------------------------------
+  function updateWorkspacesUI() {
+    const activeWs = workspaces.find(w => w.id === activeWorkspaceId) || workspaces[0] || { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' };
+
+    // Update horizontal pill
+    if (hWsIcon) hWsIcon.textContent = activeWs.icon;
+    if (hWsName) hWsName.textContent = activeWs.name;
+
+    // Update vertical sidebar pill
+    if (vWsIcon) vWsIcon.textContent = activeWs.icon;
+    if (vWsName) vWsName.textContent = activeWs.name;
+
+    // Render Zen Workspace Dock buttons at bottom of vertical sidebar
+    if (zenWsList) {
+      zenWsList.innerHTML = '';
+      workspaces.forEach(ws => {
+        const btn = document.createElement('button');
+        const isActive = ws.id === activeWorkspaceId;
+        btn.className = 'zen-ws-btn' + (isActive ? ' active' : '');
+        btn.style.setProperty('--ws-color', ws.color || '#6366f1');
+        btn.style.setProperty('--ws-glow', (ws.color || '#6366f1') + '66');
+        btn.textContent = ws.icon || '📁';
+
+        // Count tabs in this workspace
+        const tabCount = currentTabs.filter(t => t.workspaceId === ws.id).length;
+        btn.title = `${ws.name} (${tabCount} záložek)`;
+
+        btn.addEventListener('click', () => {
+          if (ws.id !== activeWorkspaceId) {
+            api.switchWorkspace(ws.id);
+          }
+        });
+        zenWsList.appendChild(btn);
+      });
+    }
+
+    // Render workspace dropdown items in popover
+    if (workspaceItemsContainer) {
+      workspaceItemsContainer.innerHTML = '';
+      workspaces.forEach(ws => {
+        const row = document.createElement('div');
+        const isActive = ws.id === activeWorkspaceId;
+        row.className = 'ws-item-row' + (isActive ? ' active' : '');
+
+        const tabCount = currentTabs.filter(t => t.workspaceId === ws.id).length;
+
+        row.innerHTML = `
+          <div class="ws-item-info">
+            <span style="font-size: 18px;">${ws.icon}</span>
+            <span style="font-weight: 600; color: ${ws.color || '#fff'}">${ws.name}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="ws-item-badge">${tabCount} záložek</span>
+            ${workspaces.length > 1 ? `<button class="tab-close-btn btn-del-ws" title="Smazat prostor">&times;</button>` : ''}
+          </div>
+        `;
+
+        row.querySelector('.ws-item-info').addEventListener('click', () => {
+          api.switchWorkspace(ws.id);
+          closeAllPopovers();
+        });
+
+        const delBtn = row.querySelector('.btn-del-ws');
+        if (delBtn) {
+          delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm(`Opravdu chcete smazat pracovní prostor "${ws.name}"? Všechny jeho záložky budou přesunuty.`)) {
+              await api.deleteWorkspace(ws.id);
+            }
+          });
+        }
+
+        workspaceItemsContainer.appendChild(row);
+      });
+    }
+  }
+
+  // Workspace Pill Click Handlers
+  if (hWorkspacePill) {
+    hWorkspacePill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePopover(popoverWorkspaceMenu);
+    });
+  }
+
+  if (vWsPill) {
+    vWsPill.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePopover(popoverWorkspaceMenu);
+    });
+  }
+
+  // Mouse wheel cycling over Zen workspace dock
+  if (zenWsDock) {
+    zenWsDock.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (workspaces.length <= 1) return;
+      const currentIdx = workspaces.findIndex(w => w.id === activeWorkspaceId);
+      if (currentIdx < 0) return;
+
+      let nextIdx = e.deltaY > 0 ? currentIdx + 1 : currentIdx - 1;
+      if (nextIdx >= workspaces.length) nextIdx = 0;
+      if (nextIdx < 0) nextIdx = workspaces.length - 1;
+
+      api.switchWorkspace(workspaces[nextIdx].id);
+    }, { passive: false });
+  }
+
+  // Create Workspace Modal
+  const presetIcons = ['👤', '💼', '⚡', '🎓', '🎮', '🛍️', '🎨', '🎵', '🚀', '💻', '🏠', '📚', '🎬', '💡'];
+  const presetColors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#8b5cf6', '#14b8a6'];
+
+  function initWorkspaceModalPickers() {
+    wsIconPicker.innerHTML = '';
+    presetIcons.forEach(icon => {
+      const el = document.createElement('div');
+      el.className = 'icon-choice' + (icon === selectedWsIcon ? ' selected' : '');
+      el.textContent = icon;
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.icon-choice').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedWsIcon = icon;
+      });
+      wsIconPicker.appendChild(el);
+    });
+
+    wsColorPicker.innerHTML = '';
+    presetColors.forEach(color => {
+      const el = document.createElement('div');
+      el.className = 'color-choice' + (color === selectedWsColor ? ' selected' : '');
+      el.style.backgroundColor = color;
+      el.addEventListener('click', () => {
+        document.querySelectorAll('.color-choice').forEach(c => c.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedWsColor = color;
+      });
+      wsColorPicker.appendChild(el);
+    });
+  }
+
+  function openCreateWorkspaceModal() {
+    closeAllPopovers();
+    inputWsName.value = '';
+    selectedWsIcon = '📁';
+    selectedWsColor = '#6366f1';
+    initWorkspaceModalPickers();
+    modalWorkspace.classList.remove('hidden');
+    inputWsName.focus();
+  }
+
+  btnCreateWs.addEventListener('click', openCreateWorkspaceModal);
+  btnOpenCreateWsModal.addEventListener('click', openCreateWorkspaceModal);
+  btnCloseWsModal.addEventListener('click', () => modalWorkspace.classList.add('hidden'));
+
+  btnSaveWorkspace.addEventListener('click', async () => {
+    const name = inputWsName.value.trim();
+    if (!name) {
+      alert('Zadejte prosím název pracovního prostoru.');
+      return;
+    }
+    const newWs = await api.createWorkspace(name, selectedWsIcon, selectedWsColor);
+    modalWorkspace.classList.add('hidden');
+    await api.switchWorkspace(newWs.id);
+  });
+
+  // Tab Context Menu Logic
+  function openTabContextMenu(e, tab) {
+    contextTargetTab = tab;
+    tabContextMenu.style.left = `${Math.min(e.clientX, window.innerWidth - 220)}px`;
+    tabContextMenu.style.top = `${Math.min(e.clientY, window.innerHeight - 200)}px`;
+    tabContextMenu.classList.remove('hidden');
+
+    // Populate workspaces submenu for moving tab
+    ctxWorkspacesSubmenu.innerHTML = '';
+    workspaces.forEach(ws => {
+      const item = document.createElement('div');
+      item.className = 'context-item';
+      item.innerHTML = `<span>${ws.icon} ${ws.name}</span> ${ws.id === tab.workspaceId ? '✔' : ''}`;
+      item.addEventListener('click', async () => {
+        if (ws.id !== tab.workspaceId) {
+          await api.moveTabToWorkspace(tab.id, ws.id);
+        }
+        tabContextMenu.classList.add('hidden');
+      });
+      ctxWorkspacesSubmenu.appendChild(item);
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!tabContextMenu.contains(e.target)) {
+      tabContextMenu.classList.add('hidden');
+    }
+  });
+
+  ctxDuplicateTab.addEventListener('click', () => {
+    if (contextTargetTab) api.duplicateTab(contextTargetTab.id);
+    tabContextMenu.classList.add('hidden');
+  });
+
+  ctxPinTab.addEventListener('click', () => {
+    if (contextTargetTab) api.togglePinTab(contextTargetTab.id);
+    tabContextMenu.classList.add('hidden');
+  });
+
+  ctxMuteTab.addEventListener('click', () => {
+    if (contextTargetTab) api.toggleMute(contextTargetTab.id);
+    tabContextMenu.classList.add('hidden');
+  });
+
+  ctxCloseTab.addEventListener('click', () => {
+    if (contextTargetTab) api.closeTab(contextTargetTab.id);
+    tabContextMenu.classList.add('hidden');
+  });
 
   // -------------------------------------------------------------
   // Navigation & Omnibox
@@ -219,7 +483,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Popover Manager
   // -------------------------------------------------------------
   function closeAllPopovers() {
-    [popoverShields, popoverVideo, popoverPopups, popoverExpander, popoverExtensions].forEach(p => {
+    [popoverShields, popoverVideo, popoverPopups, popoverExpander, popoverExtensions, popoverWorkspaceMenu].forEach(p => {
       if (p) p.classList.add('hidden');
     });
     activePopover = null;
@@ -526,6 +790,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   api.onTabsListUpdated((data) => {
     currentTabs = data.tabs || [];
     activeTabId = data.activeTabId;
+    activeWorkspaceId = data.activeWorkspaceId || activeWorkspaceId;
+    workspaces = data.workspaces || workspaces;
+    renderTabs();
+  });
+
+  api.onWorkspaceChanged((data) => {
+    activeWorkspaceId = data.activeWorkspaceId;
+    workspaces = data.workspaces;
+    updateWorkspacesUI();
     renderTabs();
   });
 
@@ -589,6 +862,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnBack.disabled = !tab.canGoBack;
       btnForward.disabled = !tab.canGoForward;
       if (document.activeElement !== omniboxInput) {
+        function formatOmniboxDisplay(rawUrl) {
+          if (!rawUrl || rawUrl.startsWith('browsy://newtab') || rawUrl.includes('newtab.html') || rawUrl === 'about:blank') {
+            return '';
+          }
+          if (rawUrl.startsWith('browsy://extensions') || rawUrl.includes('extensions.html')) {
+            return 'browsy://extensions';
+          }
+          return rawUrl;
+        }
         omniboxInput.value = formatOmniboxDisplay(tab.url);
       }
     }
@@ -611,7 +893,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key.toLowerCase() === 't') {
       e.preventDefault();
-      api.createTab('browsy://newtab');
+      api.createTab('browsy://newtab', { workspaceId: activeWorkspaceId });
     } else if (e.ctrlKey && e.key.toLowerCase() === 'w') {
       e.preventDefault();
       if (activeTabId) api.closeTab(activeTabId);
@@ -622,9 +904,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       e.preventDefault();
       omniboxInput.focus();
       omniboxInput.select();
+    } else if (e.altKey && e.key >= '1' && e.key <= '9') {
+      // Quick workspace switch (Alt+1, Alt+2, etc.)
+      const idx = parseInt(e.key, 10) - 1;
+      if (workspaces[idx]) {
+        e.preventDefault();
+        api.switchWorkspace(workspaces[idx].id);
+      }
     } else if (e.key === 'Escape') {
       closeAllPopovers();
       modalSettings.classList.add('hidden');
+      modalWorkspace.classList.add('hidden');
+      tabContextMenu.classList.add('hidden');
     }
   });
 
@@ -633,5 +924,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (initSettings.tabLayout) {
     applyLayout(initSettings.tabLayout);
   }
+
+  // Load initial workspaces
+  try {
+    workspaces = await api.getWorkspaces();
+    activeWorkspaceId = await api.getActiveWorkspace();
+    updateWorkspacesUI();
+  } catch (e) {
+    console.error('Error loading initial workspaces:', e);
+  }
+
   syncViewportBounds();
 });

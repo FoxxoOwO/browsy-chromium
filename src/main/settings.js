@@ -27,7 +27,13 @@ class SettingsManager {
         { id: '6', trigger: ':lorem', replacement: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.', label: 'Lorem Ipsum text' },
         { id: '7', trigger: ':greet', replacement: 'Dobrý den,\n\nděkuji za Vaši zprávu.\n\nS pozdravem,\n', label: 'Formální pozdrav' },
         { id: '8', trigger: ':thx', replacement: 'Děkuji mnohokrát!', label: 'Poděkování' }
-      ]
+      ],
+      workspaces: [
+        { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' },
+        { id: 'ws_work', name: 'Práce', icon: '💼', color: '#10b981' },
+        { id: 'ws_dev', name: 'Vývoj', icon: '⚡', color: '#f59e0b' }
+      ],
+      activeWorkspaceId: 'ws_default'
     };
     this.settings = this.load();
   }

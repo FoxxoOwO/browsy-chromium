@@ -14,6 +14,20 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   togglePinTab: (tabId) => ipcRenderer.invoke('tabs:toggle-pin', tabId),
   getTabs: () => ipcRenderer.invoke('tabs:get-list'),
 
+  // Workspaces (Zen Browser style)
+  getWorkspaces: () => ipcRenderer.invoke('workspaces:get-all'),
+  getActiveWorkspace: () => ipcRenderer.invoke('workspaces:get-active'),
+  switchWorkspace: (id) => ipcRenderer.invoke('workspaces:switch', id),
+  createWorkspace: (name, icon, color) => ipcRenderer.invoke('workspaces:create', name, icon, color),
+  updateWorkspace: (id, data) => ipcRenderer.invoke('workspaces:update', id, data),
+  deleteWorkspace: (id) => ipcRenderer.invoke('workspaces:delete', id),
+  moveTabToWorkspace: (tabId, targetWsId) => ipcRenderer.invoke('workspaces:move-tab', tabId, targetWsId),
+  onWorkspaceChanged: (cb) => {
+    const sub = (e, data) => cb(data);
+    ipcRenderer.on('browsy:workspace-changed', sub);
+    return () => ipcRenderer.removeListener('browsy:workspace-changed', sub);
+  },
+
   // Layout & Bounds
   updateContentBounds: (bounds) => ipcRenderer.invoke('layout:update-bounds', bounds),
   setLayoutMode: (mode) => ipcRenderer.invoke('layout:set-mode', mode),

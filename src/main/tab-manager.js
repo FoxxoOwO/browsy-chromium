@@ -15,6 +15,7 @@ class TabManager {
     this.nextId = 1;
     this.contentPreloadPath = path.join(__dirname, '../../content-preload.js');
     this.contentBounds = { x: 0, y: 78, width: 1200, height: 722 };
+    this.activeWorkspaceId = settingsManager.get('activeWorkspaceId', 'ws_default');
 
     this.setupIPC();
   }
@@ -70,6 +71,7 @@ class TabManager {
       isAudioPlaying: false,
       isMuted: false,
       isPinned: !!options.pinned,
+      workspaceId: options.workspaceId || this.activeWorkspaceId,
       view: view,
       webContentsId: view.webContents.id
     };
@@ -182,17 +184,24 @@ class TabManager {
       this.tabOrder.splice(index, 1);
     }
 
-    // If no tabs left, open new tab
+    // If no tabs left at all, open new tab
     if (this.tabs.size === 0) {
-      this.createTab('browsy://newtab');
+      this.createTab('browsy://newtab', { workspaceId: this.activeWorkspaceId });
       return;
     }
 
-    // If active tab closed, switch to adjacent tab
+    // If active tab closed, switch to adjacent tab in the same workspace
     if (wasActive) {
-      const newIndex = Math.min(index, this.tabOrder.length - 1);
-      const newActiveId = this.tabOrder[newIndex];
-      this.switchTab(newActiveId);
+      const sameWsTabs = this.tabOrder.filter(id => {
+        const t = this.tabs.get(id);
+        return t && t.workspaceId === this.activeWorkspaceId;
+      });
+
+      if (sameWsTabs.length > 0) {
+        this.switchTab(sameWsTabs[0]);
+      } else {
+        this.createTab('browsy://newtab', { workspaceId: this.activeWorkspaceId });
+      }
     }
 
     this.notifyTabsListChanged();
@@ -326,22 +335,12 @@ class TabManager {
 
   notifyTabsListChanged() {
     if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
-    const list = this.tabOrder.map(id => {
-      const t = this.tabs.get(id);
-      return {
-        id: t.id,
-        url: t.url,
-        title: t.title,
-        favicon: t.favicon,
-        isLoading: t.isLoading,
-        isAudioPlaying: t.isAudioPlaying,
-        isMuted: t.isMuted,
-        isPinned: t.isPinned
-      };
-    });
+    const list = this.getTabsList();
     this.mainWindow.webContents.send('browsy:tabs-list-updated', {
       tabs: list,
-      activeTabId: this.activeTabId
+      activeTabId: this.activeTabId,
+      activeWorkspaceId: this.activeWorkspaceId,
+      workspaces: this.getWorkspaces()
     });
   }
 
@@ -356,9 +355,121 @@ class TabManager {
         isLoading: t.isLoading,
         isAudioPlaying: t.isAudioPlaying,
         isMuted: t.isMuted,
-        isPinned: t.isPinned
+        isPinned: t.isPinned,
+        workspaceId: t.workspaceId
       };
     });
+  }
+
+  notifyWorkspaceChanged() {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send('browsy:workspace-changed', {
+      activeWorkspaceId: this.activeWorkspaceId,
+      workspaces: this.getWorkspaces()
+    });
+  }
+
+  switchWorkspace(workspaceId) {
+    const workspaces = this.getWorkspaces();
+    if (!workspaces.some(w => w.id === workspaceId)) return;
+
+    this.activeWorkspaceId = workspaceId;
+    settingsManager.set('activeWorkspaceId', workspaceId);
+
+    // Find tabs in this workspace
+    const wsTabs = this.tabOrder.filter(id => {
+      const t = this.tabs.get(id);
+      return t && t.workspaceId === workspaceId;
+    });
+
+    if (wsTabs.length > 0) {
+      this.switchTab(wsTabs[0]);
+    } else {
+      this.createTab('browsy://newtab', { workspaceId });
+    }
+
+    this.notifyTabsListChanged();
+    this.notifyWorkspaceChanged();
+  }
+
+  moveTabToWorkspace(tabId, targetWorkspaceId) {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return;
+    tab.workspaceId = targetWorkspaceId;
+
+    if (this.activeTabId === tabId) {
+      const remaining = this.tabOrder.filter(id => {
+        const t = this.tabs.get(id);
+        return t && t.workspaceId === this.activeWorkspaceId;
+      });
+      if (remaining.length > 0) {
+        this.switchTab(remaining[0]);
+      } else {
+        this.createTab('browsy://newtab', { workspaceId: this.activeWorkspaceId });
+      }
+    }
+    this.notifyTabsListChanged();
+  }
+
+  getWorkspaces() {
+    return settingsManager.get('workspaces', [
+      { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' },
+      { id: 'ws_work', name: 'Práce', icon: '💼', color: '#10b981' },
+      { id: 'ws_dev', name: 'Vývoj', icon: '⚡', color: '#f59e0b' }
+    ]);
+  }
+
+  createWorkspace(name, icon = '📁', color = '#6366f1') {
+    const list = [...this.getWorkspaces()];
+    const newWs = {
+      id: 'ws_' + Date.now(),
+      name: name.trim() || 'Nový prostor',
+      icon: icon || '📁',
+      color: color || '#6366f1'
+    };
+    list.push(newWs);
+    settingsManager.set('workspaces', list);
+    this.notifyWorkspaceChanged();
+    this.notifyTabsListChanged();
+    return newWs;
+  }
+
+  updateWorkspace(id, data) {
+    let list = [...this.getWorkspaces()];
+    const idx = list.findIndex(w => w.id === id);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...data };
+      settingsManager.set('workspaces', list);
+      this.notifyWorkspaceChanged();
+      this.notifyTabsListChanged();
+      return list[idx];
+    }
+    throw new Error('Pracovní prostor nebyl nalezen.');
+  }
+
+  deleteWorkspace(id) {
+    let list = [...this.getWorkspaces()];
+    if (list.length <= 1) {
+      throw new Error('Nelze smazat jediný existující pracovní prostor.');
+    }
+    list = list.filter(w => w.id !== id);
+    settingsManager.set('workspaces', list);
+
+    // Reassign tabs from deleted workspace to the first remaining workspace
+    const fallbackWsId = list[0].id;
+    for (const tab of this.tabs.values()) {
+      if (tab.workspaceId === id) {
+        tab.workspaceId = fallbackWsId;
+      }
+    }
+
+    if (this.activeWorkspaceId === id) {
+      this.switchWorkspace(fallbackWsId);
+    } else {
+      this.notifyTabsListChanged();
+      this.notifyWorkspaceChanged();
+    }
+    return true;
   }
 }
 

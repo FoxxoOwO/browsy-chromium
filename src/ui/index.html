@@ -13,6 +13,11 @@
     <header id="browser-header">
       <!-- Horizontal Tab Bar (hidden when in vertical mode) -->
       <div id="horizontal-tab-bar" class="tab-bar">
+        <div id="horizontal-workspace-pill" class="workspace-pill" title="Přepnout pracovní prostor (Workspace)">
+          <span id="h-ws-icon" class="ws-icon">👤</span>
+          <span id="h-ws-name" class="ws-name">Osobní</span>
+          <span class="ws-arrow">▾</span>
+        </div>
         <div id="horizontal-tabs-container" class="tabs-scroll-area">
           <!-- Dynamic Tabs Injected Here -->
         </div>
@@ -98,13 +103,19 @@
     <div id="browser-body">
       <!-- Vertical Sidebar (visible when layout is 'vertical') -->
       <aside id="vertical-sidebar" class="sidebar">
-        <div class="sidebar-top">
-          <div class="sidebar-header">
-            <span class="sidebar-title">Záložky</span>
-            <button id="btn-collapse-sidebar" class="nav-btn icon-btn" title="Sbalit / Rozbalit postranní panel">
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
-            </button>
+        <!-- Zen Workspace Selector Header -->
+        <div id="v-workspace-header" class="v-workspace-header">
+          <div id="v-ws-pill" class="v-ws-pill" title="Změnit pracovní prostor">
+            <span id="v-ws-icon" class="ws-icon">👤</span>
+            <span id="v-ws-name" class="v-ws-name">Osobní</span>
+            <span class="ws-arrow">▾</span>
           </div>
+          <button id="btn-collapse-sidebar" class="nav-btn icon-btn" title="Sbalit / Rozbalit postranní panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
+          </button>
+        </div>
+
+        <div class="sidebar-top">
           <button id="v-new-tab-btn" class="v-new-tab-btn" title="Nová záložka">
             <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             <span class="v-btn-text">Nová záložka</span>
@@ -113,6 +124,16 @@
 
         <div id="vertical-tabs-container" class="v-tabs-scroll-area">
           <!-- Dynamic Vertical Tabs Injected Here -->
+        </div>
+
+        <!-- Zen Browser Style Workspace Dock at Bottom -->
+        <div id="zen-workspace-dock" class="zen-ws-dock">
+          <div id="zen-ws-list" class="zen-ws-list">
+            <!-- Dynamic Circular Workspace Buttons Injected Here -->
+          </div>
+          <button id="btn-create-ws" class="zen-ws-btn zen-ws-add" title="Nový pracovní prostor (Workspace)">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2.5" fill="none"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
         </div>
       </aside>
 
@@ -320,6 +341,70 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- 7. Workspace Dropdown Menu -->
+    <div id="popover-workspace-menu" class="popover hidden">
+      <div class="popover-header">
+        <div class="popover-title">
+          <span class="icon">💼</span>
+          <span>Pracovní prostory (Workspaces)</span>
+        </div>
+        <button class="popover-close-btn">&times;</button>
+      </div>
+      <div class="popover-content">
+        <div id="workspace-items-container" class="workspace-list">
+          <!-- Dynamic Workspace list rows -->
+        </div>
+        <div class="popover-footer-actions" style="margin-top: 12px;">
+          <button id="btn-open-create-ws-modal" class="primary-btn full-width">➕ Vytvořit nový prostor</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Workspace Create / Edit Modal -->
+    <div id="modal-workspace" class="modal-backdrop hidden">
+      <div class="modal-dialog" style="width: 440px;">
+        <div class="modal-header">
+          <h2 id="modal-ws-title">Nový pracovní prostor</h2>
+          <button id="btn-close-ws-modal" class="modal-close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="display:block; font-size:12px; margin-bottom:6px; color:var(--text-muted);">Název prostoru</label>
+            <input type="text" id="input-ws-name" placeholder="např. Práce, Škola, Projekty..." style="width:100%; background:var(--bg-primary); border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; color:var(--text-primary); outline:none;">
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label style="display:block; font-size:12px; margin-bottom:6px; color:var(--text-muted);">Ikona / Emoji</label>
+            <div id="ws-icon-picker" class="icon-picker-grid">
+              <!-- Clickable emoji icons injected dynamically -->
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom: 20px;">
+            <label style="display:block; font-size:12px; margin-bottom:6px; color:var(--text-muted);">Barevný akcent</label>
+            <div id="ws-color-picker" class="color-picker-grid">
+              <!-- Swatches injected dynamically -->
+            </div>
+          </div>
+          <button id="btn-save-workspace" class="primary-btn full-width" style="padding:10px;">Uložit pracovní prostor</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 9. Tab Context Menu -->
+    <div id="tab-context-menu" class="context-menu hidden">
+      <div class="context-item" id="ctx-duplicate-tab">Duplikovat záložku</div>
+      <div class="context-item" id="ctx-pin-tab">Připnout / Odepnout záložku</div>
+      <div class="context-item" id="ctx-mute-tab">Ztlumit / Povolit zvuk</div>
+      <div class="context-separator"></div>
+      <div class="context-item has-submenu" id="ctx-move-ws-parent">
+        <span>Přesunout do prostoru ❯</span>
+        <div id="ctx-workspaces-submenu" class="context-submenu">
+          <!-- Dynamic workspace targets -->
+        </div>
+      </div>
+      <div class="context-separator"></div>
+      <div class="context-item danger" id="ctx-close-tab">Zavřít záložku</div>
     </div>
 
   </div>
