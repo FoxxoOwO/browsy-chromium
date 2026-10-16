@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nová záložka - Browsy Chromium</title>
+  <style>
+    :root {
+      --bg: #0f1015;
+      --card-bg: rgba(26, 27, 38, 0.7);
+      --card-hover: rgba(40, 42, 58, 0.9);
+      --border: #28293d;
+      --text: #f1f2f6;
+      --text-muted: #8b8ea4;
+      --accent: #6366f1;
+      --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image:
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(168, 85, 247, 0.1) 0px, transparent 50%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .clock-section {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .clock {
+      font-size: 64px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      background: var(--accent-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .date {
+      font-size: 16px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .search-box-wrapper {
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 40px;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 10px 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(12px);
+      transition: all 0.2s ease;
+    }
+
+    .search-bar:focus-within {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    .search-icon {
+      font-size: 18px;
+      margin-right: 12px;
+      color: var(--text-muted);
+    }
+
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 16px;
+    }
+
+    .search-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .speed-dials {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 16px;
+      width: 100%;
+      max-width: 760px;
+      margin-bottom: 40px;
+    }
+
+    .dial-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-decoration: none;
+      color: var(--text);
+      transition: all 0.2s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .dial-card:hover {
+      background: var(--card-hover);
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .dial-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+
+    .dial-title {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .features-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 760px;
+      backdrop-filter: blur(8px);
+    }
+
+    .features-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .feat-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .feat-icon {
+      font-size: 20px;
+      background: rgba(99, 102, 241, 0.15);
+      padding: 8px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .feat-text h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .feat-text p {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="clock-section">
+      <div id="clock" class="clock">12:00</div>
+      <div id="date" class="date">Pondělí, 1. ledna</div>
+    </div>
+
+    <div class="search-box-wrapper">
+      <form id="search-form" class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" class="search-input" placeholder="Hledat na webu nebo zadat URL adresu..." autofocus>
+      </form>
+    </div>
+
+    <div class="speed-dials">
+      <a href="https://www.google.com" class="dial-card">
+        <div class="dial-icon" style="background:#4285F4; color:white;">G</div>
+        <div class="dial-title">Google</div>
+      </a>
+      <a href="https://www.youtube.com" class="dial-card">
+        <div class="dial-icon" style="background:#FF0000; color:white;">▶</div>
+        <div class="dial-title">YouTube</div>
+      </a>
+      <a href="https://github.com" class="dial-card">
+        <div class="dial-icon" style="background:#24292e; color:white;">🐙</div>
+        <div class="dial-title">GitHub</div>
+      </a>
+      <a href="https://reddit.com" class="dial-card">
+        <div class="dial-icon" style="background:#FF4500; color:white;">🤖</div>
+        <div class="dial-title">Reddit</div>
+      </a>
+      <a href="https://cs.wikipedia.org" class="dial-card">
+        <div class="dial-icon" style="background:#333; color:white;">W</div>
+        <div class="dial-title">Wikipedie</div>
+      </a>
+    </div>
+
+    <div class="features-card">
+      <div class="features-title">
+        <span>🚀</span>
+        <span>Aktivní funkce Browsy Chromium</span>
+      </div>
+      <div class="features-grid">
+        <div class="feat-item">
+          <div class="feat-icon">🛡️</div>
+          <div class="feat-text">
+            <h4>uBlock Origin & Shields</h4>
+            <p>Integrovaný blokátor reklam, sledovacích skriptů a popunder sítí.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-icon">🚫</div>
+          <div class="feat-text">
+            <h4>Pop-up Blocker</h4>
+            <p>Blokuje nechtěná vyskakovací okna s možností okamžitého povolení.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-icon">🧩</div>
+          <div class="feat-text">
+            <h4>Podpora Manifest V2 & Firefox</h4>
+            <p>Plná kompatibilita s doplňky pro Chrome i Firefox (.xpi).</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-icon">📹</div>
+          <div class="feat-text">
+            <h4>Stahovač webových videí</h4>
+            <p>Automatická detekce streamů (MP4, HLS, m3u8) se stažením na jedno kliknutí.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-icon">📝</div>
+          <div class="feat-text">
+            <h4>Text Expander</h4>
+            <p>Rychlé zkratky (:mail, :date, :greet) fungující v libovolném poli na webu.</p>
+          </div>
+        </div>
+        <div class="feat-item">
+          <div class="feat-icon">📑</div>
+          <div class="feat-text">
+            <h4>Vertikální i horizontální taby</h4>
+            <p>Přepínejte styl záložek jedním kliknutím dle svých preferencí.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="newtab.js"></script>
+</body>
+</html>

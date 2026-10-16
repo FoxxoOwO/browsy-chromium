@@ -1,0 +1,365 @@
+const path = require('path');
+const { WebContentsView, ipcMain } = require('electron');
+const popupBlocker = require('./popup-blocker');
+const videoDownloader = require('./video-downloader');
+const adBlocker = require('./adblocker');
+const textExpander = require('./text-expander');
+const settingsManager = require('./settings');
+
+class TabManager {
+  constructor(mainWindow) {
+    this.mainWindow = mainWindow;
+    this.tabs = new Map(); // tabId -> TabRecord
+    this.tabOrder = []; // array of tabIds
+    this.activeTabId = null;
+    this.nextId = 1;
+    this.contentPreloadPath = path.join(__dirname, '../../content-preload.js');
+    this.contentBounds = { x: 0, y: 78, width: 1200, height: 722 };
+
+    this.setupIPC();
+  }
+
+  setupIPC() {
+    ipcMain.on('browsy:video-detected', (event, mediaInfo) => {
+      const senderWebContents = event.sender;
+      videoDownloader.registerMedia(senderWebContents.id, mediaInfo);
+    });
+
+    ipcMain.handle('browsy:get-expander-config', () => {
+      return {
+        enabled: textExpander.isEnabled(),
+        snippets: textExpander.getSnippets()
+      };
+    });
+  }
+
+  setContentBounds(bounds) {
+    this.contentBounds = bounds;
+    const activeTab = this.getActiveTab();
+    if (activeTab && activeTab.view) {
+      activeTab.view.setBounds(this.contentBounds);
+    }
+  }
+
+  getActiveTab() {
+    return this.tabs.get(this.activeTabId) || null;
+  }
+
+  createTab(initialUrl = 'browsy://newtab', options = {}) {
+    const tabId = 'tab_' + this.nextId++;
+
+    const view = new WebContentsView({
+      webPreferences: {
+        preload: this.contentPreloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        plugins: true,
+        webSecurity: true
+      }
+    });
+
+    const tabRecord = {
+      id: tabId,
+      url: initialUrl,
+      title: 'Nová záložka',
+      favicon: '',
+      isLoading: true,
+      canGoBack: false,
+      canGoForward: false,
+      isAudioPlaying: false,
+      isMuted: false,
+      isPinned: !!options.pinned,
+      view: view,
+      webContentsId: view.webContents.id
+    };
+
+    this.tabs.set(tabId, tabRecord);
+    this.tabOrder.push(tabId);
+
+    // Attach security & blockers
+    popupBlocker.attachToWebContents(view.webContents);
+
+    // Event listeners on tab's webContents
+    view.webContents.on('did-start-loading', () => {
+      tabRecord.isLoading = true;
+      this.notifyTabUpdated(tabRecord);
+    });
+
+    view.webContents.on('did-stop-loading', () => {
+      tabRecord.isLoading = false;
+      tabRecord.canGoBack = view.webContents.canGoBack();
+      tabRecord.canGoForward = view.webContents.canGoForward();
+      tabRecord.url = view.webContents.getURL();
+      this.notifyTabUpdated(tabRecord);
+    });
+
+    view.webContents.on('page-title-updated', (event, title) => {
+      tabRecord.title = title || 'Nová záložka';
+      this.notifyTabUpdated(tabRecord);
+    });
+
+    view.webContents.on('page-favicon-updated', (event, favicons) => {
+      if (favicons && favicons.length > 0) {
+        tabRecord.favicon = favicons[0];
+        this.notifyTabUpdated(tabRecord);
+      }
+    });
+
+    view.webContents.on('media-started-playing', () => {
+      tabRecord.isAudioPlaying = true;
+      this.notifyTabUpdated(tabRecord);
+    });
+
+    view.webContents.on('media-paused', () => {
+      tabRecord.isAudioPlaying = false;
+      this.notifyTabUpdated(tabRecord);
+    });
+
+    // Navigate to initial URL
+    this.navigateTab(tabId, initialUrl);
+
+    // Switch to new tab if requested or if first tab
+    if (options.activate !== false || this.tabs.size === 1) {
+      this.switchTab(tabId);
+    }
+
+    this.notifyTabsListChanged();
+    return tabRecord;
+  }
+
+  switchTab(tabId) {
+    if (!this.tabs.has(tabId)) return;
+    if (this.activeTabId === tabId) return;
+
+    const oldTab = this.getActiveTab();
+    if (oldTab && oldTab.view) {
+      try {
+        this.mainWindow.contentView.removeChildView(oldTab.view);
+      } catch (e) {
+        // Safe remove
+      }
+    }
+
+    this.activeTabId = tabId;
+    const newTab = this.tabs.get(tabId);
+
+    if (newTab && newTab.view) {
+      this.mainWindow.contentView.addChildView(newTab.view);
+      newTab.view.setBounds(this.contentBounds);
+      newTab.view.webContents.focus();
+    }
+
+    this.notifyActiveTabChanged(newTab);
+  }
+
+  closeTab(tabId) {
+    if (!this.tabs.has(tabId)) return;
+
+    const tab = this.tabs.get(tabId);
+    const wasActive = this.activeTabId === tabId;
+    const index = this.tabOrder.indexOf(tabId);
+
+    // Remove view from window
+    if (wasActive && tab.view) {
+      try {
+        this.mainWindow.contentView.removeChildView(tab.view);
+      } catch (e) {}
+    }
+
+    // Clean up blockers & trackers for tab
+    adBlocker.resetTabStats(tab.webContentsId);
+    popupBlocker.clearTab(tab.webContentsId);
+    videoDownloader.clearTab(tab.webContentsId);
+
+    // Destroy webContents
+    try {
+      tab.view.webContents.close();
+    } catch (e) {}
+
+    this.tabs.delete(tabId);
+    if (index >= 0) {
+      this.tabOrder.splice(index, 1);
+    }
+
+    // If no tabs left, open new tab
+    if (this.tabs.size === 0) {
+      this.createTab('browsy://newtab');
+      return;
+    }
+
+    // If active tab closed, switch to adjacent tab
+    if (wasActive) {
+      const newIndex = Math.min(index, this.tabOrder.length - 1);
+      const newActiveId = this.tabOrder[newIndex];
+      this.switchTab(newActiveId);
+    }
+
+    this.notifyTabsListChanged();
+  }
+
+  navigateTab(tabId, inputUrl) {
+    const tab = this.tabs.get(tabId);
+    if (!tab) return;
+
+    let targetUrl = inputUrl.trim();
+
+    if (targetUrl === 'browsy://newtab' || targetUrl === 'about:blank' || targetUrl === '') {
+      const newTabFile = path.join(__dirname, '../ui/newtab.html');
+      tab.url = 'browsy://newtab';
+      tab.view.webContents.loadFile(newTabFile);
+      return;
+    }
+
+    if (targetUrl === 'browsy://extensions') {
+      const extFile = path.join(__dirname, '../ui/extensions.html');
+      tab.url = 'browsy://extensions';
+      tab.view.webContents.loadFile(extFile);
+      return;
+    }
+
+    // Check if input looks like a valid URL or a search query
+    const hasScheme = /^[a-zA-Z]+:\/\//.test(targetUrl);
+    const isDomain = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(\/.*)?$/.test(targetUrl);
+
+    if (hasScheme) {
+      // standard URL
+    } else if (isDomain) {
+      targetUrl = 'https://' + targetUrl;
+    } else {
+      // Search query using configured engine
+      const engine = settingsManager.get('defaultSearchEngine', 'google');
+      const engines = {
+        google: 'https://www.google.com/search?q=',
+        duckduckgo: 'https://duckduckgo.com/?q=',
+        bing: 'https://www.bing.com/search?q=',
+        brave: 'https://search.brave.com/search?q='
+      };
+      const searchBase = engines[engine] || engines.google;
+      targetUrl = searchBase + encodeURIComponent(targetUrl);
+    }
+
+    tab.url = targetUrl;
+    tab.view.webContents.loadURL(targetUrl).catch((err) => {
+      console.warn(`[TabManager] Error loading ${targetUrl}:`, err.message);
+    });
+  }
+
+  reloadTab(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab && tab.view) {
+      tab.view.webContents.reload();
+    }
+  }
+
+  goBack(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab && tab.view && tab.view.webContents.canGoBack()) {
+      tab.view.webContents.goBack();
+    }
+  }
+
+  goForward(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab && tab.view && tab.view.webContents.canGoForward()) {
+      tab.view.webContents.goForward();
+    }
+  }
+
+  toggleMuteTab(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab && tab.view) {
+      const current = tab.view.webContents.isAudioMuted();
+      tab.view.webContents.setAudioMuted(!current);
+      tab.isMuted = !current;
+      this.notifyTabUpdated(tab);
+    }
+  }
+
+  duplicateTab(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab) {
+      this.createTab(tab.url);
+    }
+  }
+
+  togglePinTab(tabId) {
+    const tab = this.tabs.get(tabId);
+    if (tab) {
+      tab.isPinned = !tab.isPinned;
+      this.notifyTabUpdated(tab);
+      this.notifyTabsListChanged();
+    }
+  }
+
+  notifyTabUpdated(tab) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send('browsy:tab-updated', {
+      id: tab.id,
+      url: tab.url,
+      title: tab.title,
+      favicon: tab.favicon,
+      isLoading: tab.isLoading,
+      canGoBack: tab.canGoBack,
+      canGoForward: tab.canGoForward,
+      isAudioPlaying: tab.isAudioPlaying,
+      isMuted: tab.isMuted,
+      isPinned: tab.isPinned
+    });
+  }
+
+  notifyActiveTabChanged(tab) {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send('browsy:active-tab-changed', {
+      id: tab.id,
+      url: tab.url,
+      title: tab.title,
+      canGoBack: tab.canGoBack,
+      canGoForward: tab.canGoForward,
+      isLoading: tab.isLoading,
+      isMuted: tab.isMuted,
+      blockedAds: adBlocker.getStatsForTab(tab.webContentsId),
+      blockedPopups: popupBlocker.getBlockedPopups(tab.webContentsId),
+      detectedMedia: videoDownloader.getMediaForTab(tab.webContentsId)
+    });
+  }
+
+  notifyTabsListChanged() {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    const list = this.tabOrder.map(id => {
+      const t = this.tabs.get(id);
+      return {
+        id: t.id,
+        url: t.url,
+        title: t.title,
+        favicon: t.favicon,
+        isLoading: t.isLoading,
+        isAudioPlaying: t.isAudioPlaying,
+        isMuted: t.isMuted,
+        isPinned: t.isPinned
+      };
+    });
+    this.mainWindow.webContents.send('browsy:tabs-list-updated', {
+      tabs: list,
+      activeTabId: this.activeTabId
+    });
+  }
+
+  getTabsList() {
+    return this.tabOrder.map(id => {
+      const t = this.tabs.get(id);
+      return {
+        id: t.id,
+        url: t.url,
+        title: t.title,
+        favicon: t.favicon,
+        isLoading: t.isLoading,
+        isAudioPlaying: t.isAudioPlaying,
+        isMuted: t.isMuted,
+        isPinned: t.isPinned
+      };
+    });
+  }
+}
+
+module.exports = TabManager;

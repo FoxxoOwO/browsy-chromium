@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>uBlock Origin</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="ublock-popup">
+    <div class="header">
+      <div class="logo">
+        <span class="shield-icon">🛡️</span>
+        <span class="title">uBlock Origin</span>
+      </div>
+      <div class="version">v1.58.0 (Integrated)</div>
+    </div>
+
+    <div class="power-section">
+      <button id="power-btn" class="power-button active" title="Zapnout/Vypnout blokování">
+        <svg viewBox="0 0 24 24" width="48" height="48" stroke="currentColor" stroke-width="2.5" fill="none">
+          <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+          <line x1="12" y1="2" x2="12" y2="12"></line>
+        </svg>
+      </button>
+      <div id="status-text" class="status-text">Ochrana je aktivní</div>
+      <div id="domain-text" class="domain-text">Tato stránka</div>
+    </div>
+
+    <div class="stats-card">
+      <div class="stat-row">
+        <span class="stat-label">Zablokováno na této stránce:</span>
+        <span id="tab-blocked-count" class="stat-value">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Celkem zablokováno:</span>
+        <span id="total-blocked-count" class="stat-value">0</span>
+      </div>
+    </div>
+
+    <div class="tools-bar">
+      <button id="whitelist-btn" class="tool-btn" title="Povolit na tomto webu">
+        <span class="icon">🌐</span>
+        <span class="label">Povolit web</span>
+      </button>
+      <button id="element-zapper-btn" class="tool-btn" title="Odstranit prvek">
+        <span class="icon">⚡</span>
+        <span class="label">Zapper</span>
+      </button>
+      <button id="refresh-btn" class="tool-btn" title="Obnovit stránku">
+        <span class="icon">🔄</span>
+        <span class="label">Obnovit</span>
+      </button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
