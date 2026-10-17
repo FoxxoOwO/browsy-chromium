@@ -366,9 +366,10 @@ body.layout-vertical #horizontal-tab-bar {
 }
 
 #vertical-sidebar {
-  display: none;
+  display: flex;
   flex-direction: column;
   width: var(--sidebar-width);
+  flex-shrink: 0;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -376,6 +377,7 @@ body.layout-vertical #horizontal-tab-bar {
   z-index: 50;
 }
 
+.layout-vertical #vertical-sidebar,
 body.layout-vertical #vertical-sidebar {
   display: flex !important;
 }

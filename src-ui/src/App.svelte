@@ -257,6 +257,14 @@
       });
     }
 
+    if (api.onLayoutChanged) {
+      api.onLayoutChanged((mode) => {
+        layoutMode = mode;
+        setTimeout(syncViewport, 20);
+        setTimeout(syncViewport, 220);
+      });
+    }
+
     api.onMediaDetected((data) => {
       detectedVideos = [...detectedVideos, data.item];
     });
@@ -330,12 +338,14 @@
     const next = layoutMode === 'horizontal' ? 'vertical' : 'horizontal';
     layoutMode = next;
     if (api) api.setLayoutMode(next);
-    setTimeout(syncViewport, 50);
+    setTimeout(syncViewport, 20);
+    setTimeout(syncViewport, 220);
   }
 
   function toggleSidebar() {
     sidebarCollapsed = !sidebarCollapsed;
-    setTimeout(syncViewport, 50);
+    setTimeout(syncViewport, 20);
+    setTimeout(syncViewport, 220);
   }
 
   function togglePopover(name) {

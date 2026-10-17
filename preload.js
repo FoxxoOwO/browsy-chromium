@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   updateContentBounds: (bounds) => ipcRenderer.invoke('layout:update-bounds', bounds),
   setLayoutMode: (mode) => ipcRenderer.invoke('layout:set-mode', mode),
   setViewVisibility: (visible) => ipcRenderer.invoke('layout:set-view-visibility', visible),
+  onLayoutChanged: (cb) => {
+    const sub = (e, mode) => cb(mode);
+    ipcRenderer.on('browsy:layout-changed', sub);
+    return () => ipcRenderer.removeListener('browsy:layout-changed', sub);
+  },
 
   // Shields & Adblocker
   getShieldsInfo: () => ipcRenderer.invoke('shields:get-info'),

@@ -148,6 +148,9 @@ function setupIPC() {
   });
   ipcMain.handle('layout:set-mode', (e, mode) => {
     settingsManager.set('tabLayout', mode);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('browsy:layout-changed', mode);
+    }
     return mode;
   });
   ipcMain.handle('layout:set-view-visibility', (e, visible) => {
