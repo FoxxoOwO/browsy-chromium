@@ -67,6 +67,12 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get-all'),
   setSetting: (key, val) => ipcRenderer.invoke('settings:set', key, val),
 
+  // Site Info & Permissions (Chrome-like Lock modal)
+  getSiteInfo: (tabId) => ipcRenderer.invoke('site-info:get', tabId),
+  clearSiteData: (tabId) => ipcRenderer.invoke('site-info:clear-data', tabId),
+  setSitePermission: (origin, permission, value) => ipcRenderer.invoke('site-info:set-permission', origin, permission, value),
+  resetSitePermissions: (origin) => ipcRenderer.invoke('site-info:reset-permissions', origin),
+
   // Events from Main Process
   onTabUpdated: (cb) => {
     const sub = (e, data) => cb(data);

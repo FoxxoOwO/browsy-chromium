@@ -44,6 +44,34 @@
   let contextMenu = $state({ visible: false, x: 0, y: 0, tab: null });
 
   let viewportEl;
+  let lockBtnEl;
+
+  // Site Info & Permissions state (Chrome-like lock modal)
+  let siteInfo = $state(null);
+  let isClearingSiteData = $state(false);
+  let siteDataCleared = $state(false);
+  let showCertDetails = $state(false);
+  let siteInfoPos = $state({ top: 50, left: 140 });
+
+  let currentSecurityStatus = $derived.by(() => {
+    const url = activeTab?.url || '';
+    if (!url || url.startsWith('browsy://') || url.startsWith('file://') || url === 'about:blank') {
+      return 'internal';
+    }
+    if (url.startsWith('https://')) {
+      return 'secure';
+    }
+    if (url.startsWith('http://')) {
+      return 'insecure';
+    }
+    return 'internal';
+  });
+
+  function getSecurityTooltip(status) {
+    if (status === 'secure') return 'Zobrazit informace o webu (Připojení je zabezpečené)';
+    if (status === 'insecure') return 'Zobrazit informace o webu (Připojení k tomuto webu není zabezpečené)';
+    return 'Zabezpečená systémová stránka Browsy';
+  }
 
   // Derived state ($derived)
   let visibleTabs = $derived(
@@ -175,6 +203,7 @@
         canGoForward = tab.canGoForward;
         omniboxValue = formatOmniboxDisplay(tab.url);
         activeStoreInfo = tab.storeInfo && tab.storeInfo.isStore ? tab.storeInfo : null;
+        if (activePopover === 'site-info') loadSiteInfo();
       }
     });
 
@@ -300,6 +329,64 @@
     if (api) extensionsList = await api.getExtensions();
   }
 
+  async function loadSiteInfo() {
+    if (!api || !activeTabId) return;
+    siteInfo = await api.getSiteInfo(activeTabId);
+  }
+
+  function toggleSiteInfo() {
+    if (activePopover === 'site-info') {
+      activePopover = null;
+    } else {
+      if (lockBtnEl) {
+        const rect = lockBtnEl.getBoundingClientRect();
+        siteInfoPos = {
+          top: Math.round(rect.bottom + 6),
+          left: Math.round(rect.left)
+        };
+      }
+      activePopover = 'site-info';
+      siteDataCleared = false;
+      showCertDetails = false;
+      loadSiteInfo();
+    }
+  }
+
+  async function handleClearSiteData() {
+    if (!api || !activeTabId || isClearingSiteData) return;
+    isClearingSiteData = true;
+    try {
+      const res = await api.clearSiteData(activeTabId);
+      if (res && res.success) {
+        siteDataCleared = true;
+        setTimeout(() => {
+          siteDataCleared = false;
+          loadSiteInfo();
+        }, 1500);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      isClearingSiteData = false;
+    }
+  }
+
+  async function handleSetPermission(perm, val) {
+    if (!siteInfo?.origin || !api) return;
+    if (perm === 'sound') {
+      await api.toggleMute(activeTabId);
+    }
+    await api.setSitePermission(siteInfo.origin, perm, val);
+    if (!siteInfo.permissions) siteInfo.permissions = {};
+    siteInfo.permissions[perm] = val;
+  }
+
+  async function handleResetPermissions() {
+    if (!siteInfo?.origin || !api) return;
+    await api.resetSitePermissions(siteInfo.origin);
+    await loadSiteInfo();
+  }
+
   function openContextMenu(e, tab) {
     e.preventDefault();
     contextMenu = {
@@ -400,9 +487,21 @@
       </div>
 
       <div id="omnibox-container">
-        <span class="omnibox-icon">
-          <Icon name="lock" size={14} />
-        </span>
+        <button
+          bind:this={lockBtnEl}
+          class={`omnibox-lock-btn ${currentSecurityStatus}`}
+          onclick={toggleSiteInfo}
+          title={getSecurityTooltip(currentSecurityStatus)}
+          aria-label="Informace o webu"
+        >
+          {#if currentSecurityStatus === 'secure'}
+            <Icon name="lock" size={14} />
+          {:else if currentSecurityStatus === 'insecure'}
+            <Icon name="alert-triangle" size={14} />
+          {:else}
+            <Icon name="shield" size={14} />
+          {/if}
+        </button>
         <input
           type="text"
           id="omnibox-input"
@@ -561,6 +660,216 @@
   </div>
 
   <!-- Popovers (Monochromatic with SVGs) -->
+  {#if activePopover === 'site-info'}
+    <div
+      class="popover site-info-popover"
+      style={`top: ${siteInfoPos.top}px; left: ${siteInfoPos.left}px; right: auto;`}
+    >
+      <div class="popover-header">
+        <div class="popover-title">
+          {#if siteInfo?.status === 'secure'}
+            <Icon name="lock" size={16} />
+          {:else if siteInfo?.status === 'insecure'}
+            <Icon name="alert-triangle" size={16} />
+          {:else}
+            <Icon name="shield" size={16} />
+          {/if}
+          <span class="site-info-domain">{siteInfo?.domain || 'Tento web'}</span>
+        </div>
+        <button class="popover-close-btn" onclick={() => activePopover = null} title="Zavřít">
+          <Icon name="close" size={14} />
+        </button>
+      </div>
+
+      <div class="popover-content">
+        <!-- 1. Connection Security Card -->
+        <div class={`security-status-card ${siteInfo?.status || 'internal'}`}>
+          <div class="sec-card-header">
+            <div class="sec-card-icon">
+              {#if siteInfo?.status === 'secure'}
+                <Icon name="lock" size={18} />
+              {:else if siteInfo?.status === 'insecure'}
+                <Icon name="alert-triangle" size={18} />
+              {:else}
+                <Icon name="shield" size={18} />
+              {/if}
+            </div>
+            <div class="sec-card-text">
+              <div class="sec-title">{siteInfo?.title || 'Informace o připojení'}</div>
+              <div class="sec-desc">{siteInfo?.description || ''}</div>
+            </div>
+          </div>
+
+          {#if siteInfo?.certificate}
+            <button
+              class="cert-toggle-btn"
+              onclick={() => showCertDetails = !showCertDetails}
+            >
+              <div style="display:flex; align-items:center; gap:6px;">
+                <Icon name="certificate" size={13} />
+                <span>{siteInfo.certificate.status || 'Platný certifikát'}</span>
+              </div>
+              <Icon name="chevron-down" size={13} />
+            </button>
+
+            {#if showCertDetails}
+              <div class="cert-details-panel">
+                <div class="cert-row">
+                  <span class="cert-lbl">Vystaveno pro:</span>
+                  <span class="cert-val">{siteInfo.certificate.subject}</span>
+                </div>
+                <div class="cert-row">
+                  <span class="cert-lbl">Vystavitel:</span>
+                  <span class="cert-val">{siteInfo.certificate.issuer}</span>
+                </div>
+                <div class="cert-row">
+                  <span class="cert-lbl">Šifrování:</span>
+                  <span class="cert-val">{siteInfo.certificate.cipher}</span>
+                </div>
+                <div class="cert-row">
+                  <span class="cert-lbl">Stav:</span>
+                  <span class="cert-val" style="color:#ffffff;">Důvěryhodné TLS spojení</span>
+                </div>
+              </div>
+            {/if}
+          {/if}
+        </div>
+
+        <!-- 2. Cookies & Site Data -->
+        <div class="site-info-section">
+          <div class="site-section-row">
+            <div class="section-row-left">
+              <Icon name="cookie" size={16} />
+              <div>
+                <div class="row-main-text">Soubory cookie a data webů</div>
+                <div class="row-sub-text">
+                  {#if siteInfo?.cookiesCount !== undefined}
+                    {siteInfo.cookiesCount} {siteInfo.cookiesCount === 1 ? 'soubor cookie se používá' : (siteInfo.cookiesCount >= 2 && siteInfo.cookiesCount <= 4 ? 'soubory cookie se používají' : 'souborů cookie se používá')}
+                  {:else}
+                    Žádná uložená data
+                  {/if}
+                </div>
+              </div>
+            </div>
+            <button
+              class="secondary-btn clear-data-btn"
+              disabled={isClearingSiteData || siteInfo?.cookiesCount === 0}
+              onclick={handleClearSiteData}
+              title="Smazat soubory cookie a vyrovnávací paměť pro tuto doménu"
+            >
+              <Icon name="trash" size={12} />
+              <span>{siteDataCleared ? 'Smazáno!' : (isClearingSiteData ? 'Mazání...' : 'Vymazat')}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Site Permissions -->
+        {#if siteInfo?.status !== 'internal'}
+          <div class="site-info-section">
+            <div class="section-label-header">
+              <span>Oprávnění pro tento web</span>
+              <button class="text-link-btn" onclick={handleResetPermissions}>Obnovit</button>
+            </div>
+
+            <div class="perms-list">
+              <!-- Location -->
+              <div class="perm-row">
+                <div class="perm-info">
+                  <Icon name="map-pin" size={14} />
+                  <span>Poloha</span>
+                </div>
+                <select
+                  class="perm-select"
+                  value={siteInfo?.permissions?.location || 'ask'}
+                  onchange={(e) => handleSetPermission('location', e.target.value)}
+                >
+                  <option value="ask">Povolit (výchozí)</option>
+                  <option value="allow">Vždy povolit</option>
+                  <option value="block">Blokovat</option>
+                </select>
+              </div>
+
+              <!-- Camera -->
+              <div class="perm-row">
+                <div class="perm-info">
+                  <Icon name="camera" size={14} />
+                  <span>Kamera</span>
+                </div>
+                <select
+                  class="perm-select"
+                  value={siteInfo?.permissions?.camera || 'ask'}
+                  onchange={(e) => handleSetPermission('camera', e.target.value)}
+                >
+                  <option value="ask">Povolit (výchozí)</option>
+                  <option value="allow">Vždy povolit</option>
+                  <option value="block">Blokovat</option>
+                </select>
+              </div>
+
+              <!-- Microphone -->
+              <div class="perm-row">
+                <div class="perm-info">
+                  <Icon name="mic" size={14} />
+                  <span>Mikrofon</span>
+                </div>
+                <select
+                  class="perm-select"
+                  value={siteInfo?.permissions?.microphone || 'ask'}
+                  onchange={(e) => handleSetPermission('microphone', e.target.value)}
+                >
+                  <option value="ask">Povolit (výchozí)</option>
+                  <option value="allow">Vždy povolit</option>
+                  <option value="block">Blokovat</option>
+                </select>
+              </div>
+
+              <!-- Notifications -->
+              <div class="perm-row">
+                <div class="perm-info">
+                  <Icon name="bell" size={14} />
+                  <span>Oznámení</span>
+                </div>
+                <select
+                  class="perm-select"
+                  value={siteInfo?.permissions?.notifications || 'ask'}
+                  onchange={(e) => handleSetPermission('notifications', e.target.value)}
+                >
+                  <option value="ask">Povolit (výchozí)</option>
+                  <option value="allow">Vždy povolit</option>
+                  <option value="block">Blokovat</option>
+                </select>
+              </div>
+
+              <!-- Popups -->
+              <div class="perm-row">
+                <div class="perm-info">
+                  <Icon name="ban" size={14} />
+                  <span>Vyskakovací okna</span>
+                </div>
+                <select
+                  class="perm-select"
+                  value={siteInfo?.permissions?.popups || 'block'}
+                  onchange={(e) => handleSetPermission('popups', e.target.value)}
+                >
+                  <option value="block">Blokovat (výchozí)</option>
+                  <option value="allow">Povolit</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- 4. Footer: Site settings link -->
+        <div class="site-info-footer">
+          <button class="footer-btn" onclick={() => { openSettings(); }}>
+            <Icon name="settings" size={14} />
+            <span>Nastavení webů</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   {#if activePopover === 'shields'}
     <div class="popover">
       <div class="popover-header">

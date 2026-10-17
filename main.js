@@ -8,6 +8,7 @@ const adBlocker = require('./src/main/adblocker');
 const popupBlocker = require('./src/main/popup-blocker');
 const videoDownloader = require('./src/main/video-downloader');
 const textExpander = require('./src/main/text-expander');
+const siteInfoManager = require('./src/main/site-info-manager');
 const TabManager = require('./src/main/tab-manager');
 
 let mainWindow = null;
@@ -261,6 +262,28 @@ function setupIPC() {
   });
   ipcMain.handle('settings:set', (e, key, val) => {
     return settingsManager.set(key, val);
+  });
+
+  // Site Info & Permissions (Chrome Lock icon behavior)
+  ipcMain.handle('site-info:get', async (e, tabId) => {
+    const tab = tabId ? tabManager.tabs.get(tabId) : tabManager.getActiveTab();
+    if (!tab) return null;
+    return await siteInfoManager.getSiteInfo(tab.url, tab.isMuted);
+  });
+  ipcMain.handle('site-info:clear-data', async (e, tabId) => {
+    const tab = tabId ? tabManager.tabs.get(tabId) : tabManager.getActiveTab();
+    if (!tab) return { success: false };
+    const res = await siteInfoManager.clearSiteData(tab.url);
+    if (res.success && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.reload();
+    }
+    return res;
+  });
+  ipcMain.handle('site-info:set-permission', (e, origin, permission, value) => {
+    return siteInfoManager.setPermission(origin, permission, value);
+  });
+  ipcMain.handle('site-info:reset-permissions', (e, origin) => {
+    return siteInfoManager.resetPermissions(origin);
   });
 }
 
