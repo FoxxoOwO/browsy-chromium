@@ -114,5 +114,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Open store links and external links in a new tab
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a[href^="http"]');
+    if (link) {
+      e.preventDefault();
+      if (api && api.createTab) {
+        api.createTab(link.href);
+      } else {
+        window.location.href = link.href;
+      }
+    }
+  });
+
   loadExtensions();
 });

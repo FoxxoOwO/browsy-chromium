@@ -40,6 +40,14 @@ async function createWindow() {
   // Initialize Tab Manager
   tabManager = new TabManager(mainWindow);
 
+  // Handle any window.open or target="_blank" from UI to open as tabs
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    if (details.url && details.url !== 'about:blank' && tabManager) {
+      tabManager.createTab(details.url);
+    }
+    return { action: 'deny' };
+  });
+
   // Wire popup blocker notifications to UI
   popupBlocker.setCallback((tabId, record, count) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -266,6 +274,17 @@ app.whenReady().then(async () => {
 
   // Setup IPC
   setupIPC();
+
+  // Header modification for extension stores:
+  // Spoof Opera User-Agent on addons.opera.com so Opera delivers the native extension install button instead of "Download Opera"
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const url = details.url || '';
+    const requestHeaders = details.requestHeaders;
+    if (url.includes('addons.opera.com')) {
+      requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/114.0.0.0';
+    }
+    callback({ requestHeaders });
+  });
 
   // Initialize and load extensions (including built-in uBlock Origin)
   try {

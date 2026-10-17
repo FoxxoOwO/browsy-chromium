@@ -88,8 +88,10 @@ class TabManager {
     this.tabs.set(tabId, tabRecord);
     this.tabOrder.push(tabId);
 
-    // Attach security & blockers
-    popupBlocker.attachToWebContents(view.webContents);
+    // Attach security & blockers (route allowed popups/window.open directly into new tabs)
+    popupBlocker.attachToWebContents(view.webContents, (url) => {
+      this.createTab(url);
+    });
 
     // Event listeners on tab's webContents
     view.webContents.on('did-start-loading', () => {

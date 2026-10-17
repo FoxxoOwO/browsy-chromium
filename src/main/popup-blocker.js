@@ -11,19 +11,27 @@ class PopupBlocker {
     this.onPopupBlockedCallback = cb;
   }
 
-  attachToWebContents(webContents) {
+  attachToWebContents(webContents, onAllowedTabCreate) {
     webContents.setWindowOpenHandler((details) => {
-      const enabled = settingsManager.get('popupBlockerEnabled', true);
-      if (!enabled) {
-        return { action: 'allow' };
-      }
-
       const targetUrl = details.url;
       const currentUrl = webContents.getURL();
 
+      const allowHandler = () => {
+        if (typeof onAllowedTabCreate === 'function' && targetUrl && targetUrl !== 'about:blank') {
+          onAllowedTabCreate(targetUrl);
+          return { action: 'deny' };
+        }
+        return { action: 'allow' };
+      };
+
+      const enabled = settingsManager.get('popupBlockerEnabled', true);
+      if (!enabled) {
+        return allowHandler();
+      }
+
       // Check if domain is whitelisted
       if (this.isWhitelisted(currentUrl) || this.isWhitelisted(targetUrl)) {
-        return { action: 'allow' };
+        return allowHandler();
       }
 
       // Check if this looks like a popup ad or unsolicited window
@@ -52,7 +60,7 @@ class PopupBlocker {
         return { action: 'deny' };
       }
 
-      return { action: 'allow' };
+      return allowHandler();
     });
   }
 

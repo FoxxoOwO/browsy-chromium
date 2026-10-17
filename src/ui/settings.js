@@ -220,4 +220,17 @@ function escapeHtml(str) {
   }[tag] || tag));
 }
 
+// Open external links in a new tab instead of window
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[href^="http"]');
+  if (link) {
+    e.preventDefault();
+    if (api && api.createTab) {
+      api.createTab(link.href);
+    } else {
+      window.location.href = link.href;
+    }
+  }
+});
+
 loadAllSettings();

@@ -1,17 +1,38 @@
 const { ipcRenderer, contextBridge } = require('electron');
 
-if (window.location.protocol === 'file:' && window.location.pathname.includes('extensions.html')) {
-  contextBridge.exposeInMainWorld('browsyExtAPI', {
-    getAll: () => ipcRenderer.invoke('extensions:get-all'),
-    install: () => ipcRenderer.invoke('extensions:pick-install'),
-    toggle: (id, enabled) => ipcRenderer.invoke('extensions:toggle', id, enabled),
-    remove: (id) => ipcRenderer.invoke('extensions:remove', id)
-  });
+// Internal API exposure for browsy:// local files
+if (window.location.protocol === 'file:') {
+  if (window.location.pathname.includes('extensions.html')) {
+    contextBridge.exposeInMainWorld('browsyExtAPI', {
+      getAll: () => ipcRenderer.invoke('extensions:get-all'),
+      install: () => ipcRenderer.invoke('extensions:pick-install'),
+      toggle: (id, enabled) => ipcRenderer.invoke('extensions:toggle', id, enabled),
+      remove: (id) => ipcRenderer.invoke('extensions:remove', id),
+      createTab: (url) => ipcRenderer.invoke('tabs:create', url)
+    });
+  }
+  if (window.location.pathname.includes('settings.html')) {
+    contextBridge.exposeInMainWorld('browsyAPI', {
+      createTab: (url) => ipcRenderer.invoke('tabs:create', url),
+      getSettings: () => ipcRenderer.invoke('settings:get-all'),
+      setSetting: (key, val) => ipcRenderer.invoke('settings:set', key, val),
+      setLayoutMode: (mode) => ipcRenderer.invoke('layout:set-mode', mode),
+      toggleShields: (enabled) => ipcRenderer.invoke('shields:toggle-enabled', enabled),
+      togglePopupBlocker: (enabled) => ipcRenderer.invoke('popup:toggle-enabled', enabled),
+      getSnippets: () => ipcRenderer.invoke('expander:get-snippets'),
+      addSnippet: (trigger, replacement, label) => ipcRenderer.invoke('expander:add-snippet', trigger, replacement, label),
+      updateSnippet: (id, trigger, replacement, label) => ipcRenderer.invoke('expander:update-snippet', id, trigger, replacement, label),
+      deleteSnippet: (id) => ipcRenderer.invoke('expander:delete-snippet', id),
+      toggleExpander: (enabled) => ipcRenderer.invoke('expander:toggle-enabled', enabled),
+      pickAndInstallExtension: () => ipcRenderer.invoke('extensions:pick-install')
+    });
+  }
 }
 
 /**
  * Browsy Chromium Content Preload
- * Injected into web pages to handle Text Expansion, Video Detection, and Popup Guard.
+ * Injected into web pages to handle Text Expansion, Video Detection, Popup Guard,
+ * and seamless Extension Store Integrations (Chrome Web Store, Opera Add-ons, Firefox AMO).
  */
 
 // -------------------------------------------------------------
@@ -27,7 +48,6 @@ ipcRenderer.on('browsy:update-expander', (event, { enabled, snippets }) => {
   expanderSnippets = snippets || [];
 });
 
-// Request initial snippets
 ipcRenderer.invoke('browsy:get-expander-config').then(cfg => {
   if (cfg) {
     expanderEnabled = cfg.enabled;
@@ -49,7 +69,6 @@ function formatVariables(text) {
 document.addEventListener('keydown', (e) => {
   if (!expanderEnabled || expanderSnippets.length === 0) return;
 
-  // Reset on Escape, Enter, Tab or navigation keys
   if (['Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     keyBuffer = '';
     return;
@@ -60,14 +79,12 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Only accumulate single characters
   if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
     keyBuffer += e.key;
     if (keyBuffer.length > BUFFER_MAX) {
       keyBuffer = keyBuffer.slice(-BUFFER_MAX);
     }
 
-    // Check for snippet match
     for (const snippet of expanderSnippets) {
       const trigger = snippet.trigger;
       if (trigger && keyBuffer.endsWith(trigger)) {
@@ -93,14 +110,11 @@ function expandSnippet(snippet, target) {
     const start = target.selectionStart;
     const end = target.selectionEnd;
     if (start !== null && end !== null && start >= triggerLen) {
-      // Check if text preceding cursor matches trigger
       const currentVal = target.value;
       const typedTrigger = currentVal.substring(start - triggerLen, start);
       if (typedTrigger === snippet.trigger) {
-        // Select trigger and replace
         target.setSelectionRange(start - triggerLen, start);
         document.execCommand('insertText', false, replacement);
-        // Fallback for modern inputs if execCommand fails
         if (target.value.substring(start - triggerLen, start) === snippet.trigger) {
           const newVal = currentVal.substring(0, start - triggerLen) + replacement + currentVal.substring(start);
           target.value = newVal;
@@ -112,7 +126,6 @@ function expandSnippet(snippet, target) {
   } else if (isEditable) {
     const sel = window.getSelection();
     if (sel && sel.rangeCount > 0) {
-      // Delete backward triggerLen chars and insert replacement
       for (let i = 0; i < triggerLen; i++) {
         document.execCommand('delete', false, null);
       }
@@ -163,10 +176,8 @@ function formatDuration(sec) {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-// Observe DOM for dynamically loaded video players
 window.addEventListener('DOMContentLoaded', () => {
   inspectMediaElements();
-
   const observer = new MutationObserver(() => {
     inspectMediaElements();
   });
@@ -192,6 +203,7 @@ function setupStoreIntegration() {
   const chromeMatch = href.match(/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\/(?:[^\/]+\/)?([a-p]{32})/i);
   if (chromeMatch) {
     const extId = chromeMatch[1].toLowerCase();
+    setupChromeStore(extId);
     injectStoreFloatingBar('chrome', extId, 'Chrome Web Store');
     return;
   }
@@ -200,17 +212,8 @@ function setupStoreIntegration() {
   const operaMatch = href.match(/addons\.opera\.com\/(?:[a-zA-Z-]+\/)?extensions\/details\/([a-zA-Z0-9_-]+)/i);
   if (operaMatch) {
     const slug = operaMatch[1];
+    setupOperaStore(slug);
     injectStoreFloatingBar('opera', slug, 'Opera Add-ons');
-
-    // Intercept "Add to Opera" clicks
-    document.addEventListener('click', (e) => {
-      const link = e.target.closest('a[href*="/extensions/download/"]');
-      if (link) {
-        e.preventDefault();
-        e.stopPropagation();
-        installExtension('opera', slug, document.title);
-      }
-    }, true);
     return;
   }
 
@@ -218,48 +221,236 @@ function setupStoreIntegration() {
   const firefoxMatch = href.match(/addons\.mozilla\.org\/(?:[a-zA-Z-]+\/)?firefox\/addon\/([a-zA-Z0-9_-]+)/i);
   if (firefoxMatch) {
     const slug = firefoxMatch[1];
+    setupAmoStore(slug);
     injectStoreFloatingBar('firefox', slug, 'Firefox Add-ons');
-    enhanceAmoPage(slug);
     return;
   }
 }
 
-function enhanceAmoPage(slug) {
-  const tryEnhance = () => {
-    const getFirefoxWrap = document.querySelector('.Addon-get-firefox, .AMOBanner--get-firefox, .InstallButtonWrapper');
-    if (getFirefoxWrap && !document.getElementById('browsy-amo-btn')) {
+// -------------------------------------------------------------
+// Chrome Web Store Enhancer
+// -------------------------------------------------------------
+function setupChromeStore(extId) {
+  // Inject style to suppress "Install Google Chrome" nag banners
+  const style = document.createElement('style');
+  style.textContent = `
+    [aria-label*="Google Chrome"][role="region"],
+    .F9iHWe,
+    div:has(> a[href*="google.com/chrome"]) {
+      display: none !important;
+    }
+  `;
+  document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+
+  const enhanceButtons = () => {
+    // Hide nag messages in DOM
+    const nagDivs = document.querySelectorAll('div, section, aside');
+    nagDivs.forEach(el => {
+      if (el.children.length <= 4) {
+        const txt = el.textContent || '';
+        if (txt.includes('Používáte jiný prohlížeč') || txt.includes('Stáhněte si Google Chrome') || txt.includes('K instalaci rozšíření je nutný Chrome')) {
+          el.style.display = 'none';
+        }
+      }
+    });
+
+    // Find CWS Action Button (Add to Chrome / Available on Chrome / etc.)
+    const buttons = document.querySelectorAll('button');
+    buttons.forEach(btn => {
+      const txt = (btn.textContent || '').trim().toLowerCase();
+      const isTarget = txt.includes('přidat do chromu') || txt.includes('add to chrome') ||
+                       txt.includes('k dispozici v chromu') || txt.includes('available on chrome') ||
+                       txt.includes('přidat do prohlížeče');
+
+      if (isTarget && !btn.dataset.browsyEnhanced) {
+        btn.dataset.browsyEnhanced = 'true';
+        btn.disabled = false;
+        btn.removeAttribute('aria-disabled');
+
+        const span = btn.querySelector('span[jsname="V67aGc"]') || btn.querySelector('span') || btn;
+        span.textContent = '＋ Přidat do Browsy';
+        btn.classList.add('browsy-cws-btn');
+        btn.style.cursor = 'pointer';
+        btn.style.opacity = '1';
+
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          span.textContent = 'Instaluji do Browsy...';
+          installExtension('chrome', extId, document.title);
+        }, true);
+      }
+    });
+  };
+
+  enhanceButtons();
+  const obs = new MutationObserver(enhanceButtons);
+  obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+}
+
+// -------------------------------------------------------------
+// Opera Add-ons Enhancer
+// -------------------------------------------------------------
+function setupOperaStore(slug) {
+  // Inject style to suppress Opera browser required notices
+  const style = document.createElement('style');
+  style.textContent = `
+    .get-opera, .get-opera-small, .get-opera-title, .get-opera-link, [class*="get-opera"],
+    a[href*="opera.com/download"], a[href*="opera.com/computer"],
+    .sidebar .get-opera {
+      display: none !important;
+    }
+  `;
+  document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+
+  const enhanceButtons = () => {
+    const installBtns = document.querySelectorAll('.btn-install, a[data-url*="/extensions/download/"], a[href*="/extensions/download/"]');
+    installBtns.forEach(btn => {
+      if (!btn.dataset.browsyEnhanced) {
+        btn.dataset.browsyEnhanced = 'true';
+        const span = btn.querySelector('span') || btn;
+        span.textContent = '＋ Přidat do Browsy';
+        btn.classList.add('browsy-opera-btn');
+        btn.style.cursor = 'pointer';
+
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          span.textContent = 'Instaluji do Browsy...';
+          installExtension('opera', slug, document.title);
+        }, true);
+      }
+    });
+
+    // Fallback if .btn-install wasn't rendered by Opera
+    const wrapper = document.querySelector('.wrapper-install') || document.querySelector('.sidebar');
+    if (wrapper && !document.querySelector('.btn-install') && !document.getElementById('browsy-opera-direct-btn')) {
+      const customBtn = document.createElement('button');
+      customBtn.id = 'browsy-opera-direct-btn';
+      customBtn.className = 'btn-install btn-with-plus browsy-opera-btn';
+      customBtn.textContent = '＋ Přidat do Browsy';
+      customBtn.style.cssText = `
+        display: block;
+        width: 100%;
+        padding: 12px 20px;
+        background: #09090b;
+        color: #f4f4f5;
+        border: 1px solid #3f3f46;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        margin: 12px 0;
+        text-align: center;
+      `;
+      customBtn.onclick = (e) => {
+        e.preventDefault();
+        customBtn.textContent = 'Instaluji do Browsy...';
+        installExtension('opera', slug, document.title);
+      };
+      wrapper.prepend(customBtn);
+    }
+  };
+
+  enhanceButtons();
+  const obs = new MutationObserver(enhanceButtons);
+  obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+}
+
+// -------------------------------------------------------------
+// Firefox Add-ons (AMO) Enhancer
+// -------------------------------------------------------------
+function setupAmoStore(slug) {
+  // Inject style to suppress "Only with Firefox / Get Firefox" nag banners
+  const style = document.createElement('style');
+  style.textContent = `
+    .Addon-get-firefox-message,
+    .AMOBanner--get-firefox,
+    .Addon-get-firefox > p,
+    a.GetFirefoxButton,
+    a[href*="firefox/new"],
+    .Addon-get-firefox-link,
+    .PromotedBadge__help-link {
+      display: none !important;
+    }
+    .Addon-get-firefox {
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+  `;
+  document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+
+  const enhanceButtons = () => {
+    const container = document.querySelector('.InstallButtonWrapper') ||
+                      document.querySelector('.Addon-get-firefox') ||
+                      document.querySelector('.AMOMeta-install') ||
+                      document.querySelector('.Addon-header-controls');
+
+    // Intercept existing GetFirefoxButton or links to firefox/new
+    const getFxBtns = document.querySelectorAll('a.GetFirefoxButton, a[href*="firefox/new"]');
+    getFxBtns.forEach(btn => {
+      if (!btn.dataset.browsyEnhanced) {
+        btn.dataset.browsyEnhanced = 'true';
+        btn.textContent = '＋ Přidat do Browsy';
+        btn.removeAttribute('href');
+        btn.style.cursor = 'pointer';
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          btn.textContent = 'Stahuji a instaluji...';
+          installExtension('firefox', slug, document.title);
+        }, true);
+      }
+    });
+
+    if (container && !document.getElementById('browsy-amo-btn')) {
       const btn = document.createElement('button');
       btn.id = 'browsy-amo-btn';
-      btn.textContent = '+ Přidat do Browsy Chromium';
+      btn.className = 'browsy-amo-btn';
+      btn.textContent = '＋ Přidat do Browsy';
       btn.style.cssText = `
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 8px;
         background: #09090b;
         color: #f4f4f5;
         border: 1px solid #3f3f46;
-        padding: 12px 24px;
+        padding: 12px 28px;
         border-radius: 8px;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 600;
         cursor: pointer;
         margin: 12px 0;
+        width: 100%;
+        box-sizing: border-box;
         box-shadow: 0 4px 16px rgba(0,0,0,0.5);
         transition: all 0.2s ease;
       `;
       btn.onmouseenter = () => { btn.style.background = '#18181b'; btn.style.borderColor = '#71717a'; };
       btn.onmouseleave = () => { btn.style.background = '#09090b'; btn.style.borderColor = '#3f3f46'; };
-      btn.onclick = () => installExtension('firefox', slug, document.title);
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.textContent = 'Stahuji a instaluji...';
+        btn.disabled = true;
+        installExtension('firefox', slug, document.title);
+      };
 
-      getFirefoxWrap.parentNode.insertBefore(btn, getFirefoxWrap);
+      container.prepend(btn);
     }
   };
 
-  tryEnhance();
-  const obs = new MutationObserver(tryEnhance);
+  enhanceButtons();
+  const obs = new MutationObserver(enhanceButtons);
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 }
 
+// -------------------------------------------------------------
+// Floating Quick Action Banner
+// -------------------------------------------------------------
 function injectStoreFloatingBar(store, id, storeName) {
   if (document.getElementById('browsy-store-banner')) return;
 
@@ -329,36 +520,78 @@ function injectStoreFloatingBar(store, id, storeName) {
   document.getElementById('browsy-btn-store-install').onclick = () => installExtension(store, id, document.title);
 }
 
+// -------------------------------------------------------------
+// Unified Extension Installer
+// -------------------------------------------------------------
 async function installExtension(store, id, title) {
-  const btn = document.getElementById('browsy-btn-store-install');
-  if (btn) {
-    btn.textContent = 'Instaluji...';
-    btn.disabled = true;
+  // Update all in-page and floating buttons to installing state
+  const floatingBtn = document.getElementById('browsy-btn-store-install');
+  if (floatingBtn) {
+    floatingBtn.textContent = 'Instaluji...';
+    floatingBtn.disabled = true;
   }
   const amoBtn = document.getElementById('browsy-amo-btn');
   if (amoBtn) {
     amoBtn.textContent = 'Stahuji a instaluji...';
     amoBtn.disabled = true;
   }
+  const operaBtn = document.getElementById('browsy-opera-direct-btn') || document.querySelector('.browsy-opera-btn');
+  if (operaBtn) {
+    operaBtn.textContent = 'Instaluji do Browsy...';
+  }
+  const cwsBtn = document.querySelector('.browsy-cws-btn');
+  if (cwsBtn) {
+    const span = cwsBtn.querySelector('span[jsname="V67aGc"]') || cwsBtn.querySelector('span') || cwsBtn;
+    span.textContent = 'Instaluji do Browsy...';
+  }
 
   try {
     const res = await ipcRenderer.invoke('extensions:install-from-store', store, id, title);
     if (res.success) {
-      if (btn) btn.textContent = '✔ Nainstalováno!';
-      if (amoBtn) amoBtn.textContent = '✔ Úspěšně nainstalováno!';
+      if (floatingBtn) floatingBtn.textContent = '✔ Nainstalováno!';
+      if (amoBtn) {
+        amoBtn.textContent = '✔ Úspěšně nainstalováno!';
+        amoBtn.style.background = '#27272a';
+      }
+      if (operaBtn) {
+        const span = operaBtn.querySelector('span') || operaBtn;
+        span.textContent = '✔ Nainstalováno v Browsy';
+      }
+      if (cwsBtn) {
+        const span = cwsBtn.querySelector('span[jsname="V67aGc"]') || cwsBtn.querySelector('span') || cwsBtn;
+        span.textContent = '✔ Nainstalováno v Browsy';
+      }
       setTimeout(() => {
         const banner = document.getElementById('browsy-store-banner');
         if (banner) banner.remove();
-      }, 2500);
+      }, 3000);
+      return res;
     } else {
       alert('Chyba při instalaci doplňku: ' + (res.error || 'Neznámá chyba'));
-      if (btn) { btn.textContent = 'Přidat do Browsy'; btn.disabled = false; }
-      if (amoBtn) { amoBtn.textContent = '+ Přidat do Browsy Chromium'; amoBtn.disabled = false; }
+      resetButtonStates();
+      return res;
     }
   } catch (e) {
     alert('Chyba: ' + e.message);
-    if (btn) { btn.textContent = 'Přidat do Browsy'; btn.disabled = false; }
-    if (amoBtn) { amoBtn.textContent = '+ Přidat do Browsy Chromium'; amoBtn.disabled = false; }
+    resetButtonStates();
+    throw e;
+  }
+}
+
+function resetButtonStates() {
+  const floatingBtn = document.getElementById('browsy-btn-store-install');
+  if (floatingBtn) { floatingBtn.textContent = 'Přidat do Browsy'; floatingBtn.disabled = false; }
+  const amoBtn = document.getElementById('browsy-amo-btn');
+  if (amoBtn) { amoBtn.textContent = '＋ Přidat do Browsy'; amoBtn.disabled = false; }
+  const operaBtn = document.getElementById('browsy-opera-direct-btn') || document.querySelector('.browsy-opera-btn');
+  if (operaBtn) {
+    const span = operaBtn.querySelector('span') || operaBtn;
+    span.textContent = '＋ Přidat do Browsy';
+  }
+  const cwsBtn = document.querySelector('.browsy-cws-btn');
+  if (cwsBtn) {
+    const span = cwsBtn.querySelector('span[jsname="V67aGc"]') || cwsBtn.querySelector('span') || cwsBtn;
+    span.textContent = '＋ Přidat do Browsy';
   }
 }
 
