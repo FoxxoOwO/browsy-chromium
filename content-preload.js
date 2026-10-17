@@ -19,6 +19,10 @@ if (window.location.protocol === 'file:') {
       setLayoutMode: (mode) => ipcRenderer.invoke('layout:set-mode', mode),
       toggleShields: (enabled) => ipcRenderer.invoke('shields:toggle-enabled', enabled),
       togglePopupBlocker: (enabled) => ipcRenderer.invoke('popup:toggle-enabled', enabled),
+      getCustomFilters: () => ipcRenderer.invoke('shields:get-custom-filters'),
+      addCustomFilter: (rule) => ipcRenderer.invoke('shields:add-custom-filter', rule),
+      removeCustomFilter: (rule) => ipcRenderer.invoke('shields:remove-custom-filter', rule),
+      setCustomFilters: (rules) => ipcRenderer.invoke('shields:set-custom-filters', rules),
       getSnippets: () => ipcRenderer.invoke('expander:get-snippets'),
       addSnippet: (trigger, replacement, label) => ipcRenderer.invoke('expander:add-snippet', trigger, replacement, label),
       updateSnippet: (id, trigger, replacement, label) => ipcRenderer.invoke('expander:update-snippet', id, trigger, replacement, label),
@@ -596,3 +600,795 @@ function resetButtonStates() {
 }
 
 window.addEventListener('DOMContentLoaded', setupStoreIntegration);
+
+// -------------------------------------------------------------
+// 4. Browsy Shields: Cosmetic Filter Engine & Element Picker / Zapper
+// -------------------------------------------------------------
+const COSMETIC_STYLE_ID = 'browsy-cosmetic-filters';
+
+function applyCosmeticSelectors(selectors) {
+  if (!Array.isArray(selectors)) return;
+  let styleEl = document.getElementById(COSMETIC_STYLE_ID);
+
+  if (selectors.length === 0) {
+    if (styleEl) styleEl.textContent = '';
+    return;
+  }
+
+  // Validate selectors individually so one invalid custom selector doesn't break the whole stylesheet
+  const validRules = [];
+  for (const sel of selectors) {
+    if (!sel || typeof sel !== 'string') continue;
+    try {
+      document.querySelector(sel);
+      validRules.push(`${sel} { display: none !important; }`);
+    } catch (e) {
+      // Skip malformed CSS selector
+    }
+  }
+
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = COSMETIC_STYLE_ID;
+    (document.head || document.documentElement).appendChild(styleEl);
+  }
+  styleEl.textContent = validRules.join('\n');
+}
+
+function initCosmeticFilters() {
+  if (window.location.protocol === 'file:' || window.location.protocol === 'browsy:') return;
+  ipcRenderer.invoke('shields:get-cosmetic-filters', window.location.href)
+    .then(selectors => {
+      if (selectors) applyCosmeticSelectors(selectors);
+    })
+    .catch(() => {});
+}
+
+if (document.documentElement) {
+  initCosmeticFilters();
+}
+window.addEventListener('DOMContentLoaded', initCosmeticFilters);
+
+ipcRenderer.on('browsy:cosmetic-filters-updated', (event, selectors) => {
+  applyCosmeticSelectors(selectors);
+});
+
+// -------------------------------------------------------------
+// Interactive Element Zapper (Temporary) & Element Picker (Permanent)
+// -------------------------------------------------------------
+let pickerActive = false;
+let pickerMode = 'permanent'; // 'temporary' | 'permanent'
+let pickerLocked = false;
+let hoveredElement = null;
+let selectedElement = null;
+let childHistoryStack = []; // for walking down after walking up to parent
+let zappedHistory = []; // [{ el, prevDisplay, prevVisibility }]
+let scopeMode = 'domain'; // 'domain' | 'global'
+let previewActive = false;
+let currentSelector = '';
+
+let overlayRoot = null;
+let highlightBox = null;
+let highlightLabel = null;
+let topZapperBar = null;
+let pickerDialog = null;
+let previewStyleEl = null;
+
+function isBrowsyOverlayElement(el) {
+  if (!el) return true;
+  if (el.id === 'browsy-picker-root' || el.id === 'browsy-store-banner' || el.id === COSMETIC_STYLE_ID || el.id === 'browsy-picker-preview-style') {
+    return true;
+  }
+  if (el.closest && el.closest('#browsy-picker-root')) {
+    return true;
+  }
+  return false;
+}
+
+function generateSmartSelector(el) {
+  if (!el || el === document.body || el === document.documentElement) return '';
+
+  // 1. Check for clean ID (not overly random/numeric)
+  if (el.id && typeof el.id === 'string') {
+    const id = el.id.trim();
+    if (id && !/^\d/.test(id) && !/[0-9a-f]{8,}/i.test(id)) {
+      try {
+        const escaped = CSS.escape(id);
+        return `#${escaped}`;
+      } catch (e) {}
+    }
+  }
+
+  // 2. Check for semantic ad/component attributes
+  const priorityAttrs = ['data-ad', 'data-ad-slot', 'data-ad-unit', 'data-testid', 'data-component', 'data-widget', 'aria-label', 'role'];
+  for (const attr of priorityAttrs) {
+    const val = el.getAttribute(attr);
+    if (val && val.length < 60 && !val.includes('"')) {
+      const candidate = `${el.tagName.toLowerCase()}[${attr}="${val}"]`;
+      try {
+        if (document.querySelectorAll(candidate).length >= 1) {
+          return candidate;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 3. Build path using stable classes or structural hierarchy
+  const getElementSegment = (node) => {
+    const tag = node.tagName.toLowerCase();
+    if (node.id && typeof node.id === 'string' && !/^\d/.test(node.id) && !/[0-9a-f]{8,}/i.test(node.id)) {
+      return `#${CSS.escape(node.id)}`;
+    }
+
+    const classes = Array.from(node.classList || []).filter(c => {
+      if (!c || c.length < 2 || c.length > 40) return false;
+      if (c.startsWith('browsy-')) return false;
+      // Filter out likely utility/hash classes
+      if (/^(css|sc|jsx|svelte)-[a-z0-9]+$/i.test(c)) return false;
+      if (/[0-9a-f]{6,}/i.test(c)) return false;
+      return true;
+    });
+
+    if (classes.length > 0) {
+      const clsSelector = classes.slice(0, 3).map(c => `.${CSS.escape(c)}`).join('');
+      return `${tag}${clsSelector}`;
+    }
+    return tag;
+  };
+
+  const singleSeg = getElementSegment(el);
+  try {
+    const count = document.querySelectorAll(singleSeg).length;
+    if (count === 1 || (singleSeg.includes('.') && count <= 5)) {
+      return singleSeg;
+    }
+  } catch (e) {}
+
+  // Walk up up to 3 levels to build a unique-ish selector
+  const parts = [];
+  let cur = el;
+  let depth = 0;
+  while (cur && cur !== document.body && cur !== document.documentElement && depth < 3) {
+    let seg = getElementSegment(cur);
+    const parent = cur.parentElement;
+    if (parent && !seg.startsWith('#')) {
+      const siblings = Array.from(parent.children).filter(ch => ch.tagName === cur.tagName);
+      if (siblings.length > 1) {
+        const idx = siblings.indexOf(cur) + 1;
+        seg += `:nth-of-type(${idx})`;
+      }
+    }
+    parts.unshift(seg);
+    const candidate = parts.join(' > ');
+    try {
+      if (document.querySelectorAll(candidate).length === 1) {
+        return candidate;
+      }
+    } catch (e) {}
+    cur = parent;
+    depth++;
+  }
+
+  return parts.join(' > ');
+}
+
+function getFullFilterRule(selector) {
+  const clean = (selector || '').trim();
+  if (!clean) return '';
+  if (clean.includes('##') || clean.startsWith('||')) return clean;
+  const host = window.location.hostname;
+  if (scopeMode === 'domain' && host) {
+    return `${host}##${clean}`;
+  }
+  return `##${clean}`;
+}
+
+function updateHighlightBox(targetEl) {
+  if (!highlightBox || !highlightLabel) return;
+  if (!targetEl || targetEl === document.documentElement || targetEl === document.body) {
+    highlightBox.style.display = 'none';
+    highlightLabel.style.display = 'none';
+    return;
+  }
+
+  const rect = targetEl.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) {
+    highlightBox.style.display = 'none';
+    highlightLabel.style.display = 'none';
+    return;
+  }
+
+  highlightBox.style.display = 'block';
+  highlightBox.style.left = `${rect.left}px`;
+  highlightBox.style.top = `${rect.top}px`;
+  highlightBox.style.width = `${rect.width}px`;
+  highlightBox.style.height = `${rect.height}px`;
+
+  const tag = targetEl.tagName.toLowerCase();
+  const idStr = targetEl.id ? `#${targetEl.id}` : '';
+  const clsStr = targetEl.classList && targetEl.classList.length > 0
+    ? '.' + Array.from(targetEl.classList).slice(0, 2).join('.')
+    : '';
+  const dims = `${Math.round(rect.width)} × ${Math.round(rect.height)}`;
+
+  highlightLabel.textContent = `${tag}${idStr}${clsStr}  (${dims})`;
+  highlightLabel.style.display = 'block';
+
+  const labelTop = rect.top >= 28 ? rect.top - 26 : Math.min(window.innerHeight - 28, rect.bottom + 4);
+  const labelLeft = Math.max(4, Math.min(window.innerWidth - 260, rect.left));
+  highlightLabel.style.top = `${labelTop}px`;
+  highlightLabel.style.left = `${labelLeft}px`;
+}
+
+function setPreviewState(active) {
+  previewActive = active;
+  if (!previewStyleEl) {
+    previewStyleEl = document.createElement('style');
+    previewStyleEl.id = 'browsy-picker-preview-style';
+    (document.head || document.documentElement).appendChild(previewStyleEl);
+  }
+
+  if (previewActive && currentSelector) {
+    try {
+      document.querySelector(currentSelector);
+      previewStyleEl.textContent = `${currentSelector} { display: none !important; }`;
+      if (highlightBox) highlightBox.style.display = 'none';
+      if (highlightLabel) highlightLabel.style.display = 'none';
+    } catch (e) {
+      previewStyleEl.textContent = '';
+    }
+  } else {
+    previewStyleEl.textContent = '';
+    if (selectedElement) updateHighlightBox(selectedElement);
+  }
+}
+
+function zapElementTemporarily(el) {
+  if (!el || el === document.body || el === document.documentElement || isBrowsyOverlayElement(el)) return false;
+  zappedHistory.push({
+    el,
+    prevDisplay: el.style.getPropertyValue('display'),
+    prevPriority: el.style.getPropertyPriority('display')
+  });
+  el.style.setProperty('display', 'none', 'important');
+  hoveredElement = null;
+  updateHighlightBox(null);
+  updateZapperBarUI();
+  return true;
+}
+
+function undoLastZap() {
+  const last = zappedHistory.pop();
+  if (last && last.el) {
+    if (last.prevDisplay) {
+      last.el.style.setProperty('display', last.prevDisplay, last.prevPriority || '');
+    } else {
+      last.el.style.removeProperty('display');
+    }
+    updateHighlightBox(last.el);
+  }
+  updateZapperBarUI();
+}
+
+function updateZapperBarUI() {
+  if (!topZapperBar) return;
+  const countEl = topZapperBar.querySelector('#browsy-zap-count');
+  const undoBtn = topZapperBar.querySelector('#browsy-zap-undo');
+  if (countEl) {
+    countEl.textContent = `Skryto prvků: ${zappedHistory.length}`;
+  }
+  if (undoBtn) {
+    undoBtn.disabled = zappedHistory.length === 0;
+    undoBtn.style.opacity = zappedHistory.length === 0 ? '0.4' : '1';
+    undoBtn.style.cursor = zappedHistory.length === 0 ? 'default' : 'pointer';
+  }
+}
+
+function countMatchingElements(selector) {
+  if (!selector || !selector.trim()) return 0;
+  try {
+    return document.querySelectorAll(selector.trim()).length;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function updatePickerDialogUI() {
+  if (!pickerDialog) return;
+  const selInput = pickerDialog.querySelector('#browsy-picker-selector-input');
+  const rulePreview = pickerDialog.querySelector('#browsy-picker-rule-preview');
+  const matchBadge = pickerDialog.querySelector('#browsy-picker-match-count');
+  const parentBtn = pickerDialog.querySelector('#browsy-picker-parent-btn');
+  const childBtn = pickerDialog.querySelector('#browsy-picker-child-btn');
+  const scopeDomainBtn = pickerDialog.querySelector('#browsy-scope-domain');
+  const scopeGlobalBtn = pickerDialog.querySelector('#browsy-scope-global');
+  const previewBtn = pickerDialog.querySelector('#browsy-picker-preview-btn');
+
+  if (selInput && document.activeElement !== selInput) {
+    selInput.value = currentSelector;
+  }
+  if (rulePreview) {
+    rulePreview.textContent = getFullFilterRule(currentSelector);
+  }
+  if (matchBadge) {
+    const count = countMatchingElements(currentSelector);
+    matchBadge.textContent = `Shodných prvků: ${count}`;
+  }
+  if (parentBtn) {
+    const canUp = selectedElement && selectedElement.parentElement &&
+                  selectedElement.parentElement !== document.body &&
+                  selectedElement.parentElement !== document.documentElement;
+    parentBtn.disabled = !canUp;
+    parentBtn.style.opacity = canUp ? '1' : '0.4';
+  }
+  if (childBtn) {
+    const canDown = childHistoryStack.length > 0;
+    childBtn.disabled = !canDown;
+    childBtn.style.opacity = canDown ? '1' : '0.4';
+  }
+  if (scopeDomainBtn && scopeGlobalBtn) {
+    if (scopeMode === 'domain') {
+      scopeDomainBtn.style.background = '#27272a';
+      scopeDomainBtn.style.color = '#f4f4f5';
+      scopeDomainBtn.style.borderColor = '#52525b';
+      scopeGlobalBtn.style.background = 'transparent';
+      scopeGlobalBtn.style.color = '#a1a1aa';
+      scopeGlobalBtn.style.borderColor = '#27272a';
+    } else {
+      scopeGlobalBtn.style.background = '#27272a';
+      scopeGlobalBtn.style.color = '#f4f4f5';
+      scopeGlobalBtn.style.borderColor = '#52525b';
+      scopeDomainBtn.style.background = 'transparent';
+      scopeDomainBtn.style.color = '#a1a1aa';
+      scopeDomainBtn.style.borderColor = '#27272a';
+    }
+  }
+  if (previewBtn) {
+    previewBtn.textContent = previewActive ? 'Zrušit náhled' : 'Náhled skrytí';
+    previewBtn.style.background = previewActive ? '#f4f4f5' : '#18181b';
+    previewBtn.style.color = previewActive ? '#09090b' : '#e4e4e7';
+  }
+}
+
+function lockElementForPicker(el) {
+  if (!el || el === document.body || el === document.documentElement || isBrowsyOverlayElement(el)) return;
+  pickerLocked = true;
+  selectedElement = el;
+  childHistoryStack = [];
+  setPreviewState(false);
+  currentSelector = generateSmartSelector(el);
+  updateHighlightBox(el);
+  if (pickerDialog) {
+    pickerDialog.style.display = 'flex';
+  }
+  updatePickerDialogUI();
+}
+
+function buildOverlayDOM() {
+  if (overlayRoot) overlayRoot.remove();
+
+  overlayRoot = document.createElement('div');
+  overlayRoot.id = 'browsy-picker-root';
+  overlayRoot.style.cssText = `
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2147483646;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  `;
+
+  highlightBox = document.createElement('div');
+  highlightBox.style.cssText = `
+    position: fixed;
+    pointer-events: none;
+    border: 2px solid #f4f4f5;
+    background: rgba(244, 244, 245, 0.10);
+    box-shadow: 0 0 0 1px rgba(9, 9, 11, 0.85), inset 0 0 0 1px rgba(9, 9, 11, 0.5);
+    border-radius: 3px;
+    transition: all 0.05s ease-out;
+    display: none;
+    z-index: 2147483646;
+  `;
+
+  highlightLabel = document.createElement('div');
+  highlightLabel.style.cssText = `
+    position: fixed;
+    pointer-events: none;
+    background: #09090b;
+    color: #f4f4f5;
+    border: 1px solid #3f3f46;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: nowrap;
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    display: none;
+    z-index: 2147483647;
+  `;
+
+  // Top bar shown during hover/zapper mode
+  topZapperBar = document.createElement('div');
+  topZapperBar.style.cssText = `
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: auto;
+    background: rgba(9, 9, 11, 0.96);
+    color: #f4f4f5;
+    border: 1px solid #27272a;
+    border-radius: 10px;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(12px);
+    font-size: 12px;
+    user-select: none;
+  `;
+
+  const modeTitle = pickerMode === 'temporary'
+    ? 'Dočasné odstranění prvků (Zapper) — klikněte na prvek pro skrytí'
+    : 'Výběr prvku k trvalému zablokování — klikněte na prvek na stránce';
+
+  topZapperBar.innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; font-weight:600; color:#f4f4f5;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+      <span id="browsy-picker-mode-label">${modeTitle}</span>
+    </div>
+    <span id="browsy-zap-count" style="color:#a1a1aa; font-size:11px; padding-left:6px; border-left:1px solid #27272a;">Skryto prvků: ${zappedHistory.length}</span>
+    <button id="browsy-zap-undo" style="
+      background: #18181b;
+      color: #e4e4e7;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+    ">Zpět</button>
+    <button id="browsy-switch-mode-btn" style="
+      background: #18181b;
+      color: #e4e4e7;
+      border: 1px solid #27272a;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+    ">${pickerMode === 'temporary' ? 'Režim trvalého filtru' : 'Režim Zapper'}</button>
+    <button id="browsy-picker-exit-top" style="
+      background: #f4f4f5;
+      color: #09090b;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    ">Hotovo (Esc)</button>
+  `;
+
+  // Bottom-right inspector dialog for permanent custom filter creation
+  pickerDialog = document.createElement('div');
+  pickerDialog.id = 'browsy-picker-panel';
+  pickerDialog.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 390px;
+    pointer-events: auto;
+    background: #09090b;
+    color: #f4f4f5;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    padding: 16px;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.75);
+    z-index: 2147483647;
+    user-select: none;
+  `;
+
+  pickerDialog.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #18181b; padding-bottom:10px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f4f4f5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+        <span style="font-weight:600; font-size:13px; color:#f4f4f5;">Vlastní filtr prvku (Browsy Shields)</span>
+      </div>
+      <span id="browsy-picker-match-count" style="font-size:11px; color:#a1a1aa; background:#18181b; padding:2px 8px; border-radius:99px; border:1px solid #27272a;">Shodných prvků: 1</span>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <label style="font-size:11px; color:#a1a1aa; font-weight:500;">CSS Selektor prvku</label>
+        <div style="display:flex; gap:4px;">
+          <button id="browsy-picker-parent-btn" title="Vybrat nadřazený prvek" style="
+            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            padding:2px 8px; font-size:11px; cursor:pointer;
+          ">&uarr; Nadřazený</button>
+          <button id="browsy-picker-child-btn" title="Vrátit se na podřazený prvek" style="
+            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            padding:2px 8px; font-size:11px; cursor:pointer;
+          ">&darr; Podřazený</button>
+          <button id="browsy-picker-reselect-btn" title="Vybrat jiný prvek myší" style="
+            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            padding:2px 8px; font-size:11px; cursor:pointer;
+          ">Vybrat jiný</button>
+        </div>
+      </div>
+      <input id="browsy-picker-selector-input" type="text" spellcheck="false" style="
+        width:100%; box-sizing:border-box; background:#121214; color:#f4f4f5;
+        border:1px solid #27272a; border-radius:6px; padding:8px 10px;
+        font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px;
+        outline:none;
+      " />
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <div style="display:flex; gap:6px; flex:1;">
+        <button id="browsy-scope-domain" style="
+          flex:1; padding:6px 8px; border-radius:6px; border:1px solid #52525b;
+          background:#27272a; color:#f4f4f5; font-size:11px; font-weight:500; cursor:pointer;
+        ">Pouze tento web</button>
+        <button id="browsy-scope-global" style="
+          flex:1; padding:6px 8px; border-radius:6px; border:1px solid #27272a;
+          background:transparent; color:#a1a1aa; font-size:11px; font-weight:500; cursor:pointer;
+        ">Všechny weby</button>
+      </div>
+      <button id="browsy-picker-preview-btn" style="
+        padding:6px 10px; border-radius:6px; border:1px solid #3f3f46;
+        background:#18181b; color:#e4e4e7; font-size:11px; font-weight:500; cursor:pointer;
+      ">Náhled skrytí</button>
+    </div>
+
+    <div style="background:#121214; border:1px solid #18181b; border-radius:6px; padding:6px 10px; font-size:11px; color:#71717a; font-family:ui-monospace, monospace; word-break:break-all;">
+      Pravidlo: <span id="browsy-picker-rule-preview" style="color:#d4d4d8;"></span>
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:4px;">
+      <button id="browsy-picker-cancel-btn" style="
+        padding:8px 12px; border-radius:6px; border:1px solid #27272a;
+        background:transparent; color:#a1a1aa; font-size:12px; font-weight:500; cursor:pointer;
+      ">Zrušit</button>
+      <div style="display:flex; gap:8px;">
+        <button id="browsy-picker-temp-btn" style="
+          padding:8px 12px; border-radius:6px; border:1px solid #3f3f46;
+          background:#18181b; color:#f4f4f5; font-size:12px; font-weight:500; cursor:pointer;
+        ">Odstranit dočasně</button>
+        <button id="browsy-picker-save-btn" style="
+          padding:8px 14px; border-radius:6px; border:none;
+          background:#f4f4f5; color:#09090b; font-size:12px; font-weight:600; cursor:pointer;
+        ">Zablokovat trvale</button>
+      </div>
+    </div>
+  `;
+
+  overlayRoot.appendChild(highlightBox);
+  overlayRoot.appendChild(highlightLabel);
+  overlayRoot.appendChild(topZapperBar);
+  overlayRoot.appendChild(pickerDialog);
+  (document.body || document.documentElement).appendChild(overlayRoot);
+
+  // Wire Top Bar Events
+  topZapperBar.querySelector('#browsy-zap-undo').onclick = (e) => {
+    e.stopPropagation();
+    undoLastZap();
+  };
+  topZapperBar.querySelector('#browsy-switch-mode-btn').onclick = (e) => {
+    e.stopPropagation();
+    pickerMode = pickerMode === 'temporary' ? 'permanent' : 'temporary';
+    pickerLocked = false;
+    setPreviewState(false);
+    if (pickerDialog) pickerDialog.style.display = 'none';
+    const label = topZapperBar.querySelector('#browsy-picker-mode-label');
+    const switchBtn = topZapperBar.querySelector('#browsy-switch-mode-btn');
+    if (label) {
+      label.textContent = pickerMode === 'temporary'
+        ? 'Dočasné odstranění prvků (Zapper) — klikněte na prvek pro skrytí'
+        : 'Výběr prvku k trvalému zablokování — klikněte na prvek na stránce';
+    }
+    if (switchBtn) {
+      switchBtn.textContent = pickerMode === 'temporary' ? 'Režim trvalého filtru' : 'Režim Zapper';
+    }
+  };
+  topZapperBar.querySelector('#browsy-picker-exit-top').onclick = (e) => {
+    e.stopPropagation();
+    stopElementPicker();
+  };
+
+  // Wire Picker Dialog Events
+  const selInput = pickerDialog.querySelector('#browsy-picker-selector-input');
+  selInput.addEventListener('input', () => {
+    currentSelector = selInput.value.trim();
+    if (previewActive) setPreviewState(true);
+    updatePickerDialogUI();
+  });
+
+  pickerDialog.querySelector('#browsy-picker-parent-btn').onclick = (e) => {
+    e.stopPropagation();
+    if (selectedElement && selectedElement.parentElement &&
+        selectedElement.parentElement !== document.body &&
+        selectedElement.parentElement !== document.documentElement) {
+      childHistoryStack.push(selectedElement);
+      selectedElement = selectedElement.parentElement;
+      currentSelector = generateSmartSelector(selectedElement);
+      if (previewActive) setPreviewState(true);
+      else updateHighlightBox(selectedElement);
+      updatePickerDialogUI();
+    }
+  };
+
+  pickerDialog.querySelector('#browsy-picker-child-btn').onclick = (e) => {
+    e.stopPropagation();
+    if (childHistoryStack.length > 0) {
+      selectedElement = childHistoryStack.pop();
+      currentSelector = generateSmartSelector(selectedElement);
+      if (previewActive) setPreviewState(true);
+      else updateHighlightBox(selectedElement);
+      updatePickerDialogUI();
+    }
+  };
+
+  pickerDialog.querySelector('#browsy-picker-reselect-btn').onclick = (e) => {
+    e.stopPropagation();
+    pickerLocked = false;
+    setPreviewState(false);
+    pickerDialog.style.display = 'none';
+  };
+
+  pickerDialog.querySelector('#browsy-scope-domain').onclick = (e) => {
+    e.stopPropagation();
+    scopeMode = 'domain';
+    updatePickerDialogUI();
+  };
+
+  pickerDialog.querySelector('#browsy-scope-global').onclick = (e) => {
+    e.stopPropagation();
+    scopeMode = 'global';
+    updatePickerDialogUI();
+  };
+
+  pickerDialog.querySelector('#browsy-picker-preview-btn').onclick = (e) => {
+    e.stopPropagation();
+    setPreviewState(!previewActive);
+    updatePickerDialogUI();
+  };
+
+  pickerDialog.querySelector('#browsy-picker-cancel-btn').onclick = (e) => {
+    e.stopPropagation();
+    stopElementPicker();
+  };
+
+  pickerDialog.querySelector('#browsy-picker-temp-btn').onclick = (e) => {
+    e.stopPropagation();
+    setPreviewState(false);
+    if (currentSelector) {
+      try {
+        const matches = document.querySelectorAll(currentSelector);
+        matches.forEach(m => zapElementTemporarily(m));
+      } catch (err) {
+        if (selectedElement) zapElementTemporarily(selectedElement);
+      }
+    } else if (selectedElement) {
+      zapElementTemporarily(selectedElement);
+    }
+    stopElementPicker();
+  };
+
+  pickerDialog.querySelector('#browsy-picker-save-btn').onclick = async (e) => {
+    e.stopPropagation();
+    const rule = getFullFilterRule(currentSelector);
+    if (!rule) return;
+    setPreviewState(false);
+    await ipcRenderer.invoke('shields:add-custom-filter', rule);
+    stopElementPicker();
+  };
+
+  updateZapperBarUI();
+}
+
+function onPickerMouseMove(e) {
+  if (!pickerActive || pickerLocked) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  if (!el || isBrowsyOverlayElement(el)) return;
+  if (el !== hoveredElement) {
+    hoveredElement = el;
+    updateHighlightBox(hoveredElement);
+  }
+}
+
+function onPickerClick(e) {
+  if (!pickerActive) return;
+  if (isBrowsyOverlayElement(e.target)) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+
+  if (pickerLocked) return;
+
+  const target = hoveredElement || document.elementFromPoint(e.clientX, e.clientY);
+  if (!target || isBrowsyOverlayElement(target)) return;
+
+  if (pickerMode === 'temporary') {
+    zapElementTemporarily(target);
+  } else {
+    lockElementForPicker(target);
+  }
+}
+
+function onPickerKeyDown(e) {
+  if (!pickerActive) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    stopElementPicker();
+  } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && pickerMode === 'temporary') {
+    e.preventDefault();
+    e.stopPropagation();
+    undoLastZap();
+  }
+}
+
+function startElementPicker(options = {}) {
+  if (window.location.protocol === 'file:' || window.location.protocol === 'browsy:') return;
+
+  pickerMode = options.mode === 'temporary' ? 'temporary' : 'permanent';
+  pickerActive = true;
+  pickerLocked = false;
+  hoveredElement = null;
+  selectedElement = null;
+  childHistoryStack = [];
+  setPreviewState(false);
+
+  buildOverlayDOM();
+
+  window.addEventListener('mousemove', onPickerMouseMove, true);
+  window.addEventListener('click', onPickerClick, true);
+  window.addEventListener('keydown', onPickerKeyDown, true);
+
+  // If invoked from right-click context menu with specific (x, y) coordinates:
+  if (typeof options.x === 'number' && typeof options.y === 'number') {
+    const initialEl = document.elementFromPoint(options.x, options.y);
+    if (initialEl && !isBrowsyOverlayElement(initialEl) && initialEl !== document.body && initialEl !== document.documentElement) {
+      if (pickerMode === 'temporary') {
+        zapElementTemporarily(initialEl);
+      } else {
+        lockElementForPicker(initialEl);
+      }
+    }
+  }
+}
+
+function stopElementPicker() {
+  pickerActive = false;
+  pickerLocked = false;
+  hoveredElement = null;
+  selectedElement = null;
+  setPreviewState(false);
+
+  window.removeEventListener('mousemove', onPickerMouseMove, true);
+  window.removeEventListener('click', onPickerClick, true);
+  window.removeEventListener('keydown', onPickerKeyDown, true);
+
+  if (overlayRoot) {
+    overlayRoot.remove();
+    overlayRoot = null;
+  }
+}
+
+ipcRenderer.on('browsy:start-element-picker', (event, options) => {
+  startElementPicker(options || {});
+});
+

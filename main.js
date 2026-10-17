@@ -56,6 +56,21 @@ async function createWindow() {
     }
   });
 
+  // Wire adblocker live updates to UI and tabs
+  adBlocker.onFiltersChanged = () => {
+    if (tabManager) {
+      tabManager.broadcastCosmeticFiltersUpdate();
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('browsy:shields-updated');
+    }
+  };
+  adBlocker.onAdBlocked = (tabId, tabBlocked, totalBlocked) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('browsy:ad-blocked', { tabId, tabBlocked, totalBlocked });
+    }
+  };
+
   // Wire video downloader notifications to UI
   videoDownloader.setCallbacks(
     (tabId, item, count) => {
@@ -150,15 +165,45 @@ function setupIPC() {
       enabled: settingsManager.get('shieldsEnabled', true),
       totalBlocked: adBlocker.getTotalBlocked(),
       tabBlocked: tabBlocked,
-      whitelist: settingsManager.get('shieldsWhitelist', [])
+      whitelist: settingsManager.get('shieldsWhitelist', []),
+      customFilters: adBlocker.getCustomFilters()
     };
   });
   ipcMain.handle('shields:toggle-enabled', (e, enabled) => {
     settingsManager.set('shieldsEnabled', enabled);
+    if (tabManager) {
+      tabManager.broadcastCosmeticFiltersUpdate();
+    }
     return enabled;
   });
   ipcMain.handle('shields:toggle-whitelist', (e, hostname) => {
     return adBlocker.toggleWhitelist(hostname);
+  });
+  ipcMain.handle('shields:get-custom-filters', () => {
+    return adBlocker.getCustomFilters();
+  });
+  ipcMain.handle('shields:add-custom-filter', (e, rule) => {
+    return adBlocker.addCustomFilter(rule);
+  });
+  ipcMain.handle('shields:remove-custom-filter', (e, rule) => {
+    return adBlocker.removeCustomFilter(rule);
+  });
+  ipcMain.handle('shields:set-custom-filters', (e, rules) => {
+    return adBlocker.setCustomFilters(rules);
+  });
+  ipcMain.handle('shields:get-cosmetic-filters', (e, url) => {
+    const targetUrl = url || (e.sender ? e.sender.getURL() : '');
+    return adBlocker.getCosmeticSelectorsForUrl(targetUrl);
+  });
+  ipcMain.handle('shields:start-picker', (e, mode = 'permanent') => {
+    const active = tabManager ? tabManager.getActiveTab() : null;
+    if (active && active.view && !active.view.webContents.isDestroyed()) {
+      tabManager.setViewVisibility(true);
+      active.view.webContents.focus();
+      active.view.webContents.send('browsy:start-element-picker', { mode });
+      return true;
+    }
+    return false;
   });
 
   // Popups

@@ -1,5 +1,5 @@
 const path = require('path');
-const { WebContentsView, ipcMain } = require('electron');
+const { WebContentsView, ipcMain, Menu } = require('electron');
 const popupBlocker = require('./popup-blocker');
 const videoDownloader = require('./video-downloader');
 const adBlocker = require('./adblocker');
@@ -131,6 +131,87 @@ class TabManager {
       this.notifyTabUpdated(tabRecord);
     });
 
+    view.webContents.on('context-menu', (event, params) => {
+      const menuTemplate = [];
+
+      if (params.linkURL) {
+        menuTemplate.push({
+          label: 'Otevřít odkaz v nové kartě',
+          click: () => this.createTab(params.linkURL)
+        });
+        menuTemplate.push({ type: 'separator' });
+      }
+
+      menuTemplate.push(
+        {
+          label: 'Zpět',
+          enabled: tabRecord.canGoBack,
+          click: () => this.goBack(tabId)
+        },
+        {
+          label: 'Vpřed',
+          enabled: tabRecord.canGoForward,
+          click: () => this.goForward(tabId)
+        },
+        {
+          label: 'Obnovit stránku',
+          click: () => this.reloadTab(tabId)
+        },
+        { type: 'separator' }
+      );
+
+      if (params.selectionText) {
+        menuTemplate.push({ label: 'Kopírovat', role: 'copy' });
+        menuTemplate.push({ type: 'separator' });
+      } else if (params.isEditable) {
+        menuTemplate.push(
+          { label: 'Vyjmout', role: 'cut' },
+          { label: 'Kopírovat', role: 'copy' },
+          { label: 'Vložit', role: 'paste' },
+          { type: 'separator' }
+        );
+      }
+
+      menuTemplate.push(
+        {
+          label: 'Odstranit prvek dočasně (Zapper)',
+          click: () => {
+            if (!view.webContents.isDestroyed()) {
+              view.webContents.send('browsy:start-element-picker', {
+                mode: 'temporary',
+                x: params.x,
+                y: params.y
+              });
+            }
+          }
+        },
+        {
+          label: 'Zablokovat prvek trvale (Vlastní filtr)...',
+          click: () => {
+            if (!view.webContents.isDestroyed()) {
+              view.webContents.send('browsy:start-element-picker', {
+                mode: 'permanent',
+                x: params.x,
+                y: params.y
+              });
+            }
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Prozkoumat prvek',
+          click: () => {
+            if (!view.webContents.isDestroyed()) {
+              view.webContents.inspectElement(params.x, params.y);
+            }
+          }
+        }
+      );
+
+      const menu = Menu.buildFromTemplate(menuTemplate);
+      menu.popup({ window: this.mainWindow });
+    });
+
     // Navigate to initial URL
     this.navigateTab(tabId, initialUrl);
 
@@ -141,6 +222,15 @@ class TabManager {
 
     this.notifyTabsListChanged();
     return tabRecord;
+  }
+
+  broadcastCosmeticFiltersUpdate() {
+    for (const tab of this.tabs.values()) {
+      if (tab.view && !tab.view.webContents.isDestroyed()) {
+        const selectors = adBlocker.getCosmeticSelectorsForUrl(tab.view.webContents.getURL() || tab.url);
+        tab.view.webContents.send('browsy:cosmetic-filters-updated', selectors);
+      }
+    }
   }
 
   switchTab(tabId) {

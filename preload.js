@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   getShieldsInfo: () => ipcRenderer.invoke('shields:get-info'),
   toggleShields: (enabled) => ipcRenderer.invoke('shields:toggle-enabled', enabled),
   toggleShieldsWhitelist: (hostname) => ipcRenderer.invoke('shields:toggle-whitelist', hostname),
+  getCustomFilters: () => ipcRenderer.invoke('shields:get-custom-filters'),
+  addCustomFilter: (rule) => ipcRenderer.invoke('shields:add-custom-filter', rule),
+  removeCustomFilter: (rule) => ipcRenderer.invoke('shields:remove-custom-filter', rule),
+  setCustomFilters: (rules) => ipcRenderer.invoke('shields:set-custom-filters', rules),
+  startElementPicker: (mode) => ipcRenderer.invoke('shields:start-picker', mode),
 
   // Popups
   getPopupInfo: () => ipcRenderer.invoke('popup:get-info'),
@@ -93,6 +98,16 @@ contextBridge.exposeInMainWorld('browsyAPI', {
     const sub = (e, data) => cb(data);
     ipcRenderer.on('browsy:popup-blocked', sub);
     return () => ipcRenderer.removeListener('browsy:popup-blocked', sub);
+  },
+  onAdBlocked: (cb) => {
+    const sub = (e, data) => cb(data);
+    ipcRenderer.on('browsy:ad-blocked', sub);
+    return () => ipcRenderer.removeListener('browsy:ad-blocked', sub);
+  },
+  onShieldsUpdated: (cb) => {
+    const sub = (e, data) => cb(data);
+    ipcRenderer.on('browsy:shields-updated', sub);
+    return () => ipcRenderer.removeListener('browsy:shields-updated', sub);
   },
   onMediaDetected: (cb) => {
     const sub = (e, data) => cb(data);

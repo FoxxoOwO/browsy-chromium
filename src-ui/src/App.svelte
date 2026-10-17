@@ -18,12 +18,19 @@
   let currentDomain = $state('');
 
   let blockedAdsCount = $state(0);
+  let totalBlockedAds = $state(0);
+  let shieldsEnabled = $state(true);
+  let shieldsWhitelist = $state([]);
+  let customFilters = $state([]);
+  let newCustomFilterRule = $state('');
+
   let blockedPopups = $state([]);
   let detectedVideos = $state([]);
   let expanderConfig = $state({ enabled: true, snippets: [] });
   let extensionsList = $state([]);
   let activePopover = $state(null); // 'shields' | 'video' | 'popups' | 'expander' | 'extensions' | 'workspace' | null
   let showWorkspaceModal = $state(false);
+  let settingsData = $state({});
 
   // Store Extension Detection State
   let activeStoreInfo = $state(null);
@@ -52,6 +59,21 @@
   let siteDataCleared = $state(false);
   let showCertDetails = $state(false);
   let siteInfoPos = $state({ top: 50, left: 140 });
+
+  let activeTab = $derived(
+    currentTabs.find(t => t.id === activeTabId) || null
+  );
+
+  let isCurrentSiteShieldsActive = $derived.by(() => {
+    if (!shieldsEnabled) return false;
+    if (!currentDomain) return true;
+    const host = currentDomain.toLowerCase();
+    const isWhitelisted = shieldsWhitelist.some(item => {
+      const clean = String(item).toLowerCase();
+      return host === clean || host.endsWith('.' + clean);
+    });
+    return !isWhitelisted;
+  });
 
   let currentSecurityStatus = $derived.by(() => {
     const url = activeTab?.url || '';
@@ -156,6 +178,7 @@
       if (s.tabLayout) layoutMode = s.tabLayout;
       workspaces = await api.getWorkspaces();
       activeWorkspaceId = await api.getActiveWorkspace();
+      await loadShieldsInfo();
     } catch (e) {
       console.error(e);
     }
@@ -190,6 +213,7 @@
       detectedVideos = data.detectedMedia || [];
       activeStoreInfo = data.storeInfo && data.storeInfo.isStore ? data.storeInfo : null;
       storeInstallSuccess = false;
+      loadShieldsInfo();
       setTimeout(syncViewport, 30);
     });
 
@@ -202,6 +226,11 @@
         canGoBack = tab.canGoBack;
         canGoForward = tab.canGoForward;
         omniboxValue = formatOmniboxDisplay(tab.url);
+        try {
+          currentDomain = tab.url ? new URL(tab.url).hostname : '';
+        } catch (e) {
+          currentDomain = '';
+        }
         activeStoreInfo = tab.storeInfo && tab.storeInfo.isStore ? tab.storeInfo : null;
         if (activePopover === 'site-info') loadSiteInfo();
       }
@@ -210,6 +239,23 @@
     api.onPopupBlocked((data) => {
       blockedPopups = [...blockedPopups, data.record];
     });
+
+    if (api.onAdBlocked) {
+      api.onAdBlocked((data) => {
+        totalBlockedAds = data.totalBlocked || totalBlockedAds;
+        if (activeTab && data.tabId === activeTab.webContentsId) {
+          blockedAdsCount = data.tabBlocked;
+        } else {
+          loadShieldsInfo();
+        }
+      });
+    }
+
+    if (api.onShieldsUpdated) {
+      api.onShieldsUpdated(() => {
+        loadShieldsInfo();
+      });
+    }
 
     api.onMediaDetected((data) => {
       detectedVideos = [...detectedVideos, data.item];
@@ -280,8 +326,61 @@
 
   function togglePopover(name) {
     activePopover = activePopover === name ? null : name;
+    if (activePopover === 'shields') loadShieldsInfo();
     if (activePopover === 'expander') loadExpander();
     if (activePopover === 'extensions') loadExtensions();
+  }
+
+  async function loadShieldsInfo() {
+    if (!api) return;
+    try {
+      const info = await api.getShieldsInfo();
+      if (info) {
+        shieldsEnabled = info.enabled;
+        totalBlockedAds = info.totalBlocked || 0;
+        blockedAdsCount = info.tabBlocked || 0;
+        shieldsWhitelist = info.whitelist || [];
+        customFilters = info.customFilters || [];
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function handleToggleSiteShields() {
+    if (!api) return;
+    if (currentDomain && !currentDomain.startsWith('browsy')) {
+      await api.toggleShieldsWhitelist(currentDomain);
+    } else {
+      await api.toggleShields(!shieldsEnabled);
+    }
+    await loadShieldsInfo();
+  }
+
+  async function handleStartElementPicker(mode) {
+    if (!api || !api.startElementPicker) return;
+    activePopover = null;
+    // Wait a tick for popover to close and WebContentsView to become visible
+    setTimeout(() => {
+      api.startElementPicker(mode);
+    }, 40);
+  }
+
+  async function handleAddCustomFilter() {
+    const rule = newCustomFilterRule.trim();
+    if (!rule || !api || !api.addCustomFilter) return;
+    // If the user typed a raw CSS selector like ".reklama" or "#banner" without "##" or "||", prefix it with currentDomain## or ##
+    let formattedRule = rule;
+    if (!rule.includes('##') && !rule.includes('#@#') && !rule.startsWith('||') && !rule.startsWith('/') && (rule.startsWith('.') || rule.startsWith('#') || rule.startsWith('['))) {
+      formattedRule = currentDomain ? `${currentDomain}##${rule}` : `##${rule}`;
+    }
+    customFilters = await api.addCustomFilter(formattedRule);
+    newCustomFilterRule = '';
+  }
+
+  async function handleRemoveCustomFilter(rule) {
+    if (!api || !api.removeCustomFilter) return;
+    customFilters = await api.removeCustomFilter(rule);
   }
 
   function openSettings() {
@@ -871,32 +970,128 @@
   {/if}
 
   {#if activePopover === 'shields'}
-    <div class="popover">
+    <div class="popover" style="width: 370px;">
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="shield" size={16} />
-          <span>Browsy Shields & uBlock (Rust Core)</span>
+          <span>Browsy Shields & AdBlock</span>
         </div>
         <button class="popover-close-btn" onclick={() => activePopover = null}>
           <Icon name="close" size={14} />
         </button>
       </div>
       <div class="popover-content">
-        <div class="shields-toggle-card">
+        <div class="shields-toggle-card" style="display:flex; align-items:center; justify-content:space-between;">
           <div>
             <div class="toggle-name">Ochrana na této stránce</div>
-            <div class="toggle-sub">{currentDomain || 'Lokální rozhraní'}</div>
+            <div class="toggle-sub">{currentDomain || 'Globální štíty Browsy'} — {isCurrentSiteShieldsActive ? 'Zapnuto' : 'Vypnuto'}</div>
           </div>
+          <input
+            type="checkbox"
+            checked={isCurrentSiteShieldsActive}
+            onchange={handleToggleSiteShields}
+            style="width:18px; height:18px; accent-color:#f4f4f5; cursor:pointer;"
+          />
         </div>
+
         <div class="shields-stats-grid">
           <div class="stat-box">
             <span class="stat-number">{blockedAdsCount}</span>
-            <span class="stat-label">Blokováno na stránce</span>
+            <span class="stat-label">Zablokováno zde</span>
           </div>
           <div class="stat-box">
-            <span class="stat-number">Rust</span>
-            <span class="stat-label">Brave adblock-rust</span>
+            <span class="stat-number">{totalBlockedAds}</span>
+            <span class="stat-label">Celkem blokováno</span>
           </div>
+        </div>
+
+        <!-- Manual Element Removal Tools (Zapper & Permanent Picker) -->
+        <div style="margin-top: 14px; border-top: 1px solid #27272a; padding-top: 12px;">
+          <div style="font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">
+            Ruční odstranění prvků na stránce
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <button
+              class="secondary-btn full-width"
+              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:9px 12px;"
+              onclick={() => handleStartElementPicker('temporary')}
+              disabled={!currentDomain}
+              title="Kliknutím skryjete libovolné prvky pouze do obnovení stránky"
+            >
+              <Icon name="zap" size={15} />
+              <div style="text-align:left;">
+                <div style="font-weight:600; font-size:12px; color:#f4f4f5;">Odstranit prvek dočasně (Zapper)</div>
+                <div style="font-size:10px; color:#71717a;">Skryje vybraný prvek pro aktuální relaci stránky</div>
+              </div>
+            </button>
+
+            <button
+              class="primary-btn full-width"
+              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:9px 12px;"
+              onclick={() => handleStartElementPicker('permanent')}
+              disabled={!currentDomain}
+              title="Vybere prvek na stránce a uloží CSS selektor do vlastních filtrů"
+            >
+              <Icon name="crosshair" size={15} />
+              <div style="text-align:left;">
+                <div style="font-weight:600; font-size:12px;">Zablokovat prvek trvale (Vlastní filtr)</div>
+                <div style="font-size:10px; opacity:0.75;">Vytvoří trvalé pravidlo ve vlastních filtrech</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Filters Quick Manager -->
+        <div style="margin-top: 14px; border-top: 1px solid #27272a; padding-top: 12px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size: 11px; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.5px;">
+              Vlastní filtry ({customFilters.length})
+            </span>
+            <button
+              class="text-link-btn"
+              style="font-size:11px; background:none; border:none; color:#d4d4d8; cursor:pointer; text-decoration:underline;"
+              onclick={openSettings}
+            >
+              Upravit vše v nastavení
+            </button>
+          </div>
+
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <input
+              type="text"
+              placeholder={currentDomain ? `${currentDomain}##.reklama nebo ||ads.cz^` : 'example.com##.reklama'}
+              bind:value={newCustomFilterRule}
+              onkeydown={(e) => { if (e.key === 'Enter') handleAddCustomFilter(); }}
+              style="flex:1; background:#09090b; border:1px solid #27272a; color:#f4f4f5; border-radius:6px; padding:6px 9px; font-size:11px; font-family:ui-monospace, monospace;"
+            />
+            <button class="primary-btn" style="padding:6px 10px;" onclick={handleAddCustomFilter} title="Přidat vlastní filtr">
+              <Icon name="plus" size={13} />
+            </button>
+          </div>
+
+          {#if customFilters.length === 0}
+            <div style="font-size:11px; color:#71717a; text-align:center; padding:8px 0;">
+              Zatím nemáte žádné vlastní filtry.
+            </div>
+          {:else}
+            <div style="max-height:130px; overflow-y:auto; display:flex; flex-direction:column; gap:4px;">
+              {#each customFilters as rule}
+                <div style="display:flex; align-items:center; justify-content:space-between; background:#09090b; border:1px solid #18181b; border-radius:5px; padding:5px 8px; gap:8px;">
+                  <span style="font-family:ui-monospace, monospace; font-size:11px; color:#d4d4d8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title={rule}>
+                    {rule}
+                  </span>
+                  <button
+                    class="tab-close-btn"
+                    onclick={() => handleRemoveCustomFilter(rule)}
+                    title="Smazat pravidlo"
+                    style="flex-shrink:0;"
+                  >
+                    <Icon name="close" size={11} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
       </div>
     </div>

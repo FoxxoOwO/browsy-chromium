@@ -57,4 +57,20 @@ impl NativeAdBlocker {
     pub fn get_total_blocked(&self) -> u32 {
         self.total_blocked.load(Ordering::Relaxed)
     }
+
+    #[napi]
+    pub fn reload_with_custom_rules(&self, custom_rules: Vec<String>) -> bool {
+        let mut rule_text = include_str!("default_filters.txt").to_string();
+        if !custom_rules.is_empty() {
+            rule_text.push('\n');
+            rule_text.push_str(&custom_rules.join("\n"));
+        }
+        let new_engine = Engine::new_with_list_text(&rule_text);
+        if let Ok(mut guard) = self.engine.write() {
+            *guard = new_engine;
+            true
+        } else {
+            false
+        }
+    }
 }

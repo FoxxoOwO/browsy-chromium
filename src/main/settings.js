@@ -19,6 +19,7 @@ class SettingsManager {
       defaultSearchEngine: 'google',
       homePage: 'browsy://newtab',
       shieldsWhitelist: [],
+      customFilters: [],
       popupWhitelist: [],
       textExpanderSnippets: [
         { id: '1', trigger: ':date', replacement: '{date}', label: 'Dnešní datum' },

@@ -531,6 +531,47 @@
       </div>
 
       <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="22" y1="12" x2="18" y2="12"></line>
+            <line x1="6" y1="12" x2="2" y2="12"></line>
+            <line x1="12" y1="6" x2="12" y2="2"></line>
+            <line x1="12" y1="22" x2="12" y2="18"></line>
+          </svg>
+          Vlastní filtry (Custom Filters)
+        </div>
+        <div class="card-desc">
+          Trvale zablokované prvky z nástroje pro výběr prvků (Element Picker) a vlastní síťová či kosmetická pravidla.<br>
+          Formát kosmetických filtrů: <span class="code-tag">domena.cz##.css-selektor</span> nebo globálně <span class="code-tag">##.reklamni-panel</span>.
+          Formát síťových filtrů: <span class="code-tag">||ads.domena.cz^</span>.
+        </div>
+
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <input type="text" id="input-custom-filter" placeholder="např. example.com##.ad-banner nebo ||ads.example.com^" style="flex:1; font-family:monospace;">
+          <button id="btn-add-custom-filter" class="btn btn-primary">Přidat pravidlo</button>
+        </div>
+
+        <div id="custom-filters-list" class="item-list" style="margin-bottom:16px;">
+          <!-- Custom Filter Items -->
+        </div>
+
+        <div style="border-top:1px solid var(--border-subtle); padding-top:14px; margin-top:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:13px; font-weight:500; color:var(--text);">Hromadný editor vlastních filtrů (1 pravidlo na řádek)</span>
+            <button id="btn-save-bulk-filters" class="btn btn-primary" style="padding:6px 12px; font-size:12px;">Uložit hromadné změny</button>
+          </div>
+          <textarea
+            id="textarea-custom-filters"
+            rows="6"
+            spellcheck="false"
+            placeholder="! Zde můžete upravovat vlastní filtry hromadně (1 pravidlo na řádek)&#10;example.com##.sponsored-box&#10;||tracker.example.com^"
+            style="width:100%; background:#09090b; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px 12px; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; line-height:1.5; outline:none; resize:vertical;"
+          ></textarea>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-title">Whitelist domén pro štíty</div>
         <div class="card-desc">Webové stránky, na kterých jsou reklamní štíty a ochrana vypnuty.</div>
 

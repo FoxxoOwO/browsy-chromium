@@ -79,13 +79,80 @@ async function loadAllSettings() {
   // Shields Whitelist
   renderShieldsWhitelist(settings.shieldsWhitelist || []);
 
+  // Custom Filters
+  const customFilters = api.getCustomFilters ? await api.getCustomFilters() : (settings.customFilters || []);
+  renderCustomFilters(customFilters);
+
   // Popups Whitelist
   renderPopupsWhitelist(settings.popupWhitelist || []);
 
   // Snippets
-  const snippets = await api.getSnippets();
-  renderSnippets(snippets || []);
+  const snippetsRes = await api.getSnippets();
+  renderSnippets((snippetsRes && snippetsRes.snippets) ? snippetsRes.snippets : (Array.isArray(snippetsRes) ? snippetsRes : []));
 }
+
+// Custom Filters (AdBlocker & Element Picker)
+function renderCustomFilters(list) {
+  const container = document.getElementById('custom-filters-list');
+  const textarea = document.getElementById('textarea-custom-filters');
+  if (textarea && document.activeElement !== textarea) {
+    textarea.value = (list || []).join('\n');
+  }
+  if (!container) return;
+
+  if (!list || list.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-muted); font-size:13px;">Zatím nejsou uloženy žádné vlastní filtry. Prvky můžete zablokovat přímo na stránce přes pravé tlačítko myši nebo ikonu Browsy Shields.</div>';
+    return;
+  }
+
+  container.innerHTML = list.map((rule, idx) => `
+    <div class="list-row">
+      <span class="code-tag" style="word-break:break-all;">${escapeHtml(rule)}</span>
+      <button class="btn btn-danger" data-rule-idx="${idx}">Smazat</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('button[data-rule-idx]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.getAttribute('data-rule-idx'), 10);
+      const targetRule = list[idx];
+      if (targetRule && api.removeCustomFilter) {
+        const updated = await api.removeCustomFilter(targetRule);
+        renderCustomFilters(updated);
+      }
+    });
+  });
+}
+
+document.getElementById('btn-add-custom-filter')?.addEventListener('click', async () => {
+  const input = document.getElementById('input-custom-filter');
+  const val = input ? input.value.trim() : '';
+  if (val && api.addCustomFilter) {
+    const updated = await api.addCustomFilter(val);
+    input.value = '';
+    renderCustomFilters(updated);
+  }
+});
+
+document.getElementById('input-custom-filter')?.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') {
+    document.getElementById('btn-add-custom-filter')?.click();
+  }
+});
+
+document.getElementById('btn-save-bulk-filters')?.addEventListener('click', async () => {
+  const textarea = document.getElementById('textarea-custom-filters');
+  if (!textarea || !api.setCustomFilters) return;
+  const lines = textarea.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const updated = await api.setCustomFilters(lines);
+  renderCustomFilters(updated);
+  const btn = document.getElementById('btn-save-bulk-filters');
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = '✔ Uloženo';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }
+});
 
 // Whitelist Shields
 function renderShieldsWhitelist(list) {

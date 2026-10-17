@@ -44,4 +44,34 @@ const textExpander = require('../src/main/text-expander');
 const expandedJs = textExpander.resolveDynamicVariables('Dnes je {date}');
 console.log('textExpander.resolveDynamicVariables("Dnes je {date}") ->', expandedJs);
 
+console.log('--- TEST 4: Verify Custom Cosmetic & Network Filters ---');
+const initialFilters = adBlocker.getCustomFilters();
+adBlocker.addCustomFilter('idnes.cz##.reklamni-box-1');
+adBlocker.addCustomFilter('##.global-cookie-annoyance');
+adBlocker.addCustomFilter('||custom-tracker-test.cz^');
+
+const idnesCosmetics = adBlocker.getCosmeticSelectorsForUrl('https://www.idnes.cz/zpravy');
+const otherCosmetics = adBlocker.getCosmeticSelectorsForUrl('https://www.example.com/');
+
+if (!idnesCosmetics.includes('.reklamni-box-1') || !idnesCosmetics.includes('.global-cookie-annoyance')) {
+  console.error('FAIL: Cosmetic filter resolution for idnes.cz failed');
+  process.exit(1);
+}
+if (otherCosmetics.includes('.reklamni-box-1') || !otherCosmetics.includes('.global-cookie-annoyance')) {
+  console.error('FAIL: Domain scoping for cosmetic filters failed');
+  process.exit(1);
+}
+if (!adBlocker.matchesAdPattern('https://sub.custom-tracker-test.cz/script.js', 'https://idnes.cz', 'script')) {
+  console.error('FAIL: Custom network filter ||custom-tracker-test.cz^ did not block');
+  process.exit(1);
+}
+if (!adBlocker.matchesAdPattern('https://ssp.seznam.cz/ad.js', 'https://seznam.cz', 'script')) {
+  console.error('FAIL: Built-in Czech ad network ssp.seznam.cz did not block');
+  process.exit(1);
+}
+
+// Restore initial custom filters
+adBlocker.setCustomFilters(initialFilters);
+console.log('Custom Cosmetic & Network Filters: PASS');
+
 console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
