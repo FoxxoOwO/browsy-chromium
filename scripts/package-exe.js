@@ -14,28 +14,33 @@ if (!fs.existsSync(electronDistDir)) {
   process.exit(1);
 }
 
-// 1. Clean previous target directory
-if (fs.existsSync(targetDir)) {
-  console.log('[Packager] Removing previous build directory...');
-  fs.rmSync(targetDir, { recursive: true, force: true });
-}
-fs.mkdirSync(targetDir, { recursive: true });
-
-// 2. Copy Electron runtime binaries
-console.log('[Packager] Copying Chromium/Electron runtime...');
-fs.cpSync(electronDistDir, targetDir, { recursive: true });
-
-// 3. Rename electron.exe -> Browsy.exe
 const oldExe = path.join(targetDir, 'electron.exe');
 const newExe = path.join(targetDir, 'Browsy.exe');
-if (fs.existsSync(oldExe)) {
-  fs.renameSync(oldExe, newExe);
-}
 
-// 4. Remove default_app.asar so Electron boots our resources/app automatically
-const defaultAsar = path.join(targetDir, 'resources', 'default_app.asar');
-if (fs.existsSync(defaultAsar)) {
-  fs.rmSync(defaultAsar, { force: true });
+// 1. Copy Electron runtime binaries if not already present (or if --full passed)
+if (!fs.existsSync(newExe) || process.argv.includes('--full')) {
+  if (fs.existsSync(targetDir)) {
+    console.log('[Packager] Removing previous build directory...');
+    fs.rmSync(targetDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  console.log('[Packager] Copying Chromium/Electron runtime...');
+  fs.cpSync(electronDistDir, targetDir, { recursive: true });
+
+  if (fs.existsSync(oldExe)) {
+    fs.renameSync(oldExe, newExe);
+  }
+
+  const defaultAsar = path.join(targetDir, 'resources', 'default_app.asar');
+  if (fs.existsSync(defaultAsar)) {
+    fs.rmSync(defaultAsar, { force: true });
+  }
+} else {
+  console.log('[Packager] Existing Browsy.exe runtime found, updating resources/app...');
+  if (fs.existsSync(appResourcesDir)) {
+    fs.rmSync(appResourcesDir, { recursive: true, force: true });
+  }
 }
 
 // 5. Copy Browsy application files & native Rust core into resources/app

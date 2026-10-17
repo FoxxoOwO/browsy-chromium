@@ -298,6 +298,20 @@
     if (api) api.closeTab(id);
   }
 
+  function handleTabMouseDown(e) {
+    if (e.button === 1) {
+      e.preventDefault();
+    }
+  }
+
+  function handleTabAuxClick(id, e) {
+    if (e.button === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeTab(id, e);
+    }
+  }
+
   function createTab() {
     if (api) api.createTab('browsy://newtab', { workspaceId: activeWorkspaceId });
   }
@@ -538,6 +552,8 @@
             <div
               class={`tab ${tab.id === activeTabId ? 'active' : ''}`}
               onclick={() => switchTab(tab.id)}
+              onmousedown={handleTabMouseDown}
+              onauxclick={(e) => handleTabAuxClick(tab.id, e)}
               oncontextmenu={(e) => openContextMenu(e, tab)}
               role="button"
               tabindex="0"
@@ -699,6 +715,8 @@
             <div
               class={`v-tab ${tab.id === activeTabId ? 'active' : ''}`}
               onclick={() => switchTab(tab.id)}
+              onmousedown={handleTabMouseDown}
+              onauxclick={(e) => handleTabAuxClick(tab.id, e)}
               oncontextmenu={(e) => openContextMenu(e, tab)}
               role="button"
               tabindex="0"
