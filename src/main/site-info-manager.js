@@ -1,15 +1,18 @@
-const { session } = require('electron');
+const { app, session } = require('electron');
 const settingsManager = require('./settings');
 const popupBlocker = require('./popup-blocker');
 
 class SiteInfoManager {
   constructor() {
     this.permissionsKey = 'sitePermissions';
+  }
+
+  init() {
     this.initPermissionsHandler();
   }
 
   initPermissionsHandler() {
-    if (!session || !session.defaultSession) return;
+    if (!app || !app.isReady() || !session || !session.defaultSession) return;
 
     // Handle web permission requests (camera, mic, geolocation, notifications)
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {

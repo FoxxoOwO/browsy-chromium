@@ -336,8 +336,9 @@ function setupIPC() {
 // App Lifecycle
 // -------------------------------------------------------------
 app.whenReady().then(async () => {
-  // Initialize adblocker & video downloader
+  // Initialize adblocker, site info permissions & video downloader
   adBlocker.init();
+  siteInfoManager.init();
   videoDownloader.init();
 
   // Setup IPC
