@@ -5,3 +5,5 @@ dist/
 Thumbs.db
 src-native/target/
 .browsy-data/
+release/
+

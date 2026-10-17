@@ -96,6 +96,9 @@ class ExtensionManager {
         } catch (e) {
           console.error('[ExtensionManager] Error registering built-in uBlock:', e);
         }
+      } else if (this.installedExtensions['ublock-origin'].path !== builtinUBlockDir) {
+        this.installedExtensions['ublock-origin'].path = builtinUBlockDir;
+        this.saveRegistry();
       }
     }
   }

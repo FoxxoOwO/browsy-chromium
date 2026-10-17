@@ -8,6 +8,7 @@
     "build:ui": "vite build",
     "build:native": "cargo build --release --manifest-path src-native/Cargo.toml && node scripts/copy-native.js",
     "build": "npm run build:native && npm run build:ui",
+    "package:exe": "npm run build:ui && node scripts/package-exe.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
