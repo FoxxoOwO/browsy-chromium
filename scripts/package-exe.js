@@ -37,10 +37,7 @@ if (!fs.existsSync(newExe) || process.argv.includes('--full')) {
     fs.rmSync(defaultAsar, { force: true });
   }
 } else {
-  console.log('[Packager] Existing Browsy.exe runtime found, updating resources/app...');
-  if (fs.existsSync(appResourcesDir)) {
-    fs.rmSync(appResourcesDir, { recursive: true, force: true });
-  }
+  console.log('[Packager] Existing Browsy.exe runtime found, updating resources/app in-place...');
 }
 
 // 5. Copy Browsy application files & native Rust core into resources/app
@@ -58,7 +55,11 @@ const filesToCopy = [
 for (const file of filesToCopy) {
   const srcPath = path.join(rootDir, file);
   if (fs.existsSync(srcPath)) {
-    fs.copyFileSync(srcPath, path.join(appResourcesDir, file));
+    try {
+      fs.copyFileSync(srcPath, path.join(appResourcesDir, file));
+    } catch (e) {
+      // Ignore EBUSY/EPERM if browsy-core.node is already loaded by a running Browsy.exe instance
+    }
   }
 }
 
@@ -73,11 +74,11 @@ for (const relDir of dirsToCopy) {
   const destPath = path.join(appResourcesDir, relDir);
   if (fs.existsSync(srcPath)) {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.cpSync(srcPath, destPath, { recursive: true });
+    fs.cpSync(srcPath, destPath, { recursive: true, force: true });
   }
 }
 
 console.log('-------------------------------------------------------------');
-console.log('[Packager] Hotovo! Spustitelný soubor byl úspěšně vytvořen:');
+console.log('[Packager] Hotovo! Spustitelný soubor byl úspěšně aktualizován:');
 console.log(`  -> ${newExe}`);
 console.log('-------------------------------------------------------------');
