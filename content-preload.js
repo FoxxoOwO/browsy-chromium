@@ -1065,9 +1065,9 @@ function buildOverlayDOM() {
       cursor: pointer;
     ">${pickerMode === 'temporary' ? 'Režim trvalého filtru' : 'Režim Zapper'}</button>
     <button id="browsy-picker-exit-top" style="
-      background: #f4f4f5;
-      color: #09090b;
-      border: none;
+      background: #27272a !important;
+      color: #ffffff !important;
+      border: 1px solid #52525b !important;
       border-radius: 6px;
       padding: 4px 10px;
       font-size: 11px;
@@ -1114,22 +1114,22 @@ function buildOverlayDOM() {
         <label style="font-size:11px; color:#a1a1aa; font-weight:500;">CSS Selektor prvku</label>
         <div style="display:flex; gap:4px;">
           <button id="browsy-picker-parent-btn" title="Vybrat nadřazený prvek" style="
-            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            background:#18181b !important; color:#e4e4e7 !important; border:1px solid #27272a !important; border-radius:4px;
             padding:2px 8px; font-size:11px; cursor:pointer;
           ">&uarr; Nadřazený</button>
           <button id="browsy-picker-child-btn" title="Vrátit se na podřazený prvek" style="
-            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            background:#18181b !important; color:#e4e4e7 !important; border:1px solid #27272a !important; border-radius:4px;
             padding:2px 8px; font-size:11px; cursor:pointer;
           ">&darr; Podřazený</button>
           <button id="browsy-picker-reselect-btn" title="Vybrat jiný prvek myší" style="
-            background:#18181b; color:#e4e4e7; border:1px solid #27272a; border-radius:4px;
+            background:#18181b !important; color:#e4e4e7 !important; border:1px solid #27272a !important; border-radius:4px;
             padding:2px 8px; font-size:11px; cursor:pointer;
           ">Vybrat jiný</button>
         </div>
       </div>
       <input id="browsy-picker-selector-input" type="text" spellcheck="false" style="
-        width:100%; box-sizing:border-box; background:#121214; color:#f4f4f5;
-        border:1px solid #27272a; border-radius:6px; padding:8px 10px;
+        width:100%; box-sizing:border-box; background:#121214 !important; color:#f4f4f5 !important;
+        border:1px solid #27272a !important; border-radius:6px; padding:8px 10px;
         font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px;
         outline:none;
       " />
@@ -1152,23 +1152,23 @@ function buildOverlayDOM() {
       ">Náhled skrytí</button>
     </div>
 
-    <div style="background:#121214; border:1px solid #18181b; border-radius:6px; padding:6px 10px; font-size:11px; color:#71717a; font-family:ui-monospace, monospace; word-break:break-all;">
-      Pravidlo: <span id="browsy-picker-rule-preview" style="color:#d4d4d8;"></span>
+    <div style="background:#121214; border:1px solid #18181b; border-radius:6px; padding:6px 10px; font-size:11px; color:#a1a1aa; font-family:ui-monospace, monospace; word-break:break-all;">
+      Pravidlo: <span id="browsy-picker-rule-preview" style="color:#ffffff;"></span>
     </div>
 
     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:4px;">
       <button id="browsy-picker-cancel-btn" style="
-        padding:8px 12px; border-radius:6px; border:1px solid #27272a;
-        background:transparent; color:#a1a1aa; font-size:12px; font-weight:500; cursor:pointer;
+        padding:8px 12px; border-radius:6px; border:1px solid #27272a !important;
+        background:#121214 !important; color:#a1a1aa !important; font-size:12px; font-weight:500; cursor:pointer;
       ">Zrušit</button>
       <div style="display:flex; gap:8px;">
         <button id="browsy-picker-temp-btn" style="
-          padding:8px 12px; border-radius:6px; border:1px solid #3f3f46;
-          background:#18181b; color:#f4f4f5; font-size:12px; font-weight:500; cursor:pointer;
+          padding:8px 12px; border-radius:6px; border:1px solid #3f3f46 !important;
+          background:#18181b !important; color:#f4f4f5 !important; font-size:12px; font-weight:500; cursor:pointer;
         ">Odstranit dočasně</button>
         <button id="browsy-picker-save-btn" style="
-          padding:8px 14px; border-radius:6px; border:none;
-          background:#f4f4f5; color:#09090b; font-size:12px; font-weight:600; cursor:pointer;
+          padding:8px 14px; border-radius:6px; border:1px solid #71717a !important;
+          background:#27272a !important; color:#ffffff !important; font-size:12px; font-weight:600; cursor:pointer;
         ">Zablokovat trvale</button>
       </div>
     </div>

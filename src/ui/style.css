@@ -933,22 +933,28 @@ input:checked + .slider:before {
 
 .primary-btn {
   background-color: var(--accent-color);
-  color: white;
-  border: none;
+  color: #09090b;
+  border: 1px solid var(--accent-color);
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
 }
 .primary-btn:hover {
   background-color: var(--accent-hover);
+  color: #09090b;
+}
+.primary-btn:disabled,
+.secondary-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .secondary-btn {
   background-color: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 6px 12px;
@@ -957,7 +963,7 @@ input:checked + .slider:before {
 }
 .secondary-btn:hover {
   background-color: var(--bg-hover);
-  color: var(--text-primary);
+  color: #ffffff;
 }
 
 .full-width {

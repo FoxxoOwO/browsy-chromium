@@ -1031,7 +1031,7 @@
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <button
               class="secondary-btn full-width"
-              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:9px 12px;"
+              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:10px 12px; background:#18181b; border:1px solid #27272a; color:#f4f4f5;"
               onclick={() => handleStartElementPicker('temporary')}
               disabled={!currentDomain}
               title="Kliknutím skryjete libovolné prvky pouze do obnovení stránky"
@@ -1039,21 +1039,21 @@
               <Icon name="zap" size={15} />
               <div style="text-align:left;">
                 <div style="font-weight:600; font-size:12px; color:#f4f4f5;">Odstranit prvek dočasně (Zapper)</div>
-                <div style="font-size:10px; color:#71717a;">Skryje vybraný prvek pro aktuální relaci stránky</div>
+                <div style="font-size:10px; color:#a1a1aa;">Skryje vybraný prvek pro aktuální relaci stránky</div>
               </div>
             </button>
 
             <button
-              class="primary-btn full-width"
-              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:9px 12px;"
+              class="secondary-btn full-width"
+              style="display:flex; align-items:center; justify-content:flex-start; gap:10px; padding:10px 12px; background:#222228; border:1px solid #52525b; color:#ffffff;"
               onclick={() => handleStartElementPicker('permanent')}
               disabled={!currentDomain}
               title="Vybere prvek na stránce a uloží CSS selektor do vlastních filtrů"
             >
               <Icon name="crosshair" size={15} />
               <div style="text-align:left;">
-                <div style="font-weight:600; font-size:12px;">Zablokovat prvek trvale (Vlastní filtr)</div>
-                <div style="font-size:10px; opacity:0.75;">Vytvoří trvalé pravidlo ve vlastních filtrech</div>
+                <div style="font-weight:600; font-size:12px; color:#ffffff;">Zablokovat prvek trvale (Vlastní filtr)</div>
+                <div style="font-size:10px; color:#d4d4d8;">Vytvoří trvalé pravidlo ve vlastních filtrech</div>
               </div>
             </button>
           </div>
