@@ -32,12 +32,14 @@ class SettingsManager {
         { id: '8', trigger: ':thx', replacement: 'Děkuji mnohokrát!', label: 'Poděkování' }
       ],
       workspaces: [
-        { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' },
-        { id: 'ws_work', name: 'Práce', icon: '💼', color: '#10b981' },
-        { id: 'ws_dev', name: 'Vývoj', icon: '⚡', color: '#f59e0b' }
+        { id: 'ws_default', name: 'Osobní', icon: 'personal', color: '#f4f4f5' },
+        { id: 'ws_work', name: 'Práce', icon: 'work', color: '#d4d4d8' },
+        { id: 'ws_dev', name: 'Vývoj', icon: 'dev', color: '#a1a1aa' }
       ],
       activeWorkspaceId: 'ws_default'
     };
+    this.saveTimer = null;
+    this.dirty = false;
     this.settings = this.load();
   }
 
@@ -45,17 +47,44 @@ class SettingsManager {
     try {
       if (fs.existsSync(this.settingsPath)) {
         const raw = fs.readFileSync(this.settingsPath, 'utf8');
-        return { ...this.defaults, ...JSON.parse(raw) };
+        try {
+          return { ...structuredClone(this.defaults), ...JSON.parse(raw) };
+        } catch (parseErr) {
+          // Keep the broken file for manual recovery instead of silently overwriting it
+          console.error('[Settings] Corrupted settings file, backing it up:', parseErr);
+          try { fs.renameSync(this.settingsPath, this.settingsPath + '.corrupt'); } catch (e) {}
+        }
       }
     } catch (err) {
       console.error('[Settings] Failed to load settings:', err);
     }
-    return { ...this.defaults };
+    return structuredClone(this.defaults);
   }
 
+  /**
+   * Schedules a (debounced) write. Many consecutive set() calls produce a single disk write.
+   */
   save() {
+    this.dirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => this.flush(), 200);
+  }
+
+  /**
+   * Writes pending changes immediately and atomically (tmp file + rename).
+   */
+  flush() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    if (!this.dirty) return;
+    this.dirty = false;
     try {
-      fs.writeFileSync(this.settingsPath, JSON.stringify(this.settings, null, 2), 'utf8');
+      fs.mkdirSync(this.userDataPath, { recursive: true });
+      const tmpPath = this.settingsPath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(this.settings, null, 2), 'utf8');
+      fs.renameSync(tmpPath, this.settingsPath);
     } catch (err) {
       console.error('[Settings] Failed to save settings:', err);
     }

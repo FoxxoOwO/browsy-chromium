@@ -55,6 +55,7 @@
 ! Czech & Slovak Ad Networks (Sklik, iMedia, Gemius, BBElements, R2B2, CPEx)
 ||c.imedia.cz^
 ||c.seznam.cz^
+||ssp.seznam.cz^
 ||sklik.cz/reklama^
 ||ssp.imedia.cz^
 ||hit.gemius.pl^

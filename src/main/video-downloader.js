@@ -61,9 +61,12 @@ class VideoDownloader {
         dlRecord.state = state === 'completed' ? 'completed' : 'cancelled';
         dlRecord.receivedBytes = item.getReceivedBytes();
         dlRecord.percent = 100;
+        dlRecord.savePath = item.getSavePath() || dlRecord.savePath;
         if (this.onDownloadProgressCallback) {
           this.onDownloadProgressCallback(dlRecord);
         }
+        // Keep the finished entry visible for a moment, then release it
+        setTimeout(() => this.activeDownloads.delete(downloadId), 30000).unref?.();
       });
     });
   }
@@ -104,7 +107,9 @@ class VideoDownloader {
     } else if (isAudioMime) {
       format = 'AUDIO (' + contentType.split('/')[1].split(';')[0].toUpperCase() + ')';
     } else {
-      const extMatch = url.match(/\.(mp4|webm|m3u8|mpd|mkv|mov|ts)(\?.*)?$/i);
+      // NOTE: ".ts" is intentionally excluded - HLS streams consist of hundreds of .ts segments
+      // (and .ts is also TypeScript) which would flood the detected media list.
+      const extMatch = url.match(/\.(mp4|webm|m3u8|mpd|mkv|mov)(\?.*)?$/i);
       if (extMatch) {
         format = extMatch[1].toUpperCase();
       }
@@ -158,6 +163,8 @@ class VideoDownloader {
     };
 
     list.push(item);
+    // Bound memory use on pages that expose lots of media URLs
+    if (list.length > 100) list.shift();
     this.mediaByTab.set(tabId, list);
 
     if (this.onMediaDetectedCallback) {

@@ -109,6 +109,37 @@ class TabManager {
       this.notifyTabUpdated(tabRecord);
     });
 
+    // Keep URL / history state in sync for SPA (pushState) navigations and redirects too,
+    // not only when loading stops.
+    const syncNavigationState = () => {
+      if (view.webContents.isDestroyed()) return;
+      const history = view.webContents.navigationHistory;
+      tabRecord.canGoBack = history ? history.canGoBack() : view.webContents.canGoBack();
+      tabRecord.canGoForward = history ? history.canGoForward() : view.webContents.canGoForward();
+      tabRecord.url = view.webContents.getURL() || tabRecord.url;
+      tabRecord.storeInfo = extensionManager.detectStoreUrl(tabRecord.url);
+      this.notifyTabUpdated(tabRecord);
+    };
+    view.webContents.on('did-navigate-in-page', syncNavigationState);
+    view.webContents.on('did-navigate', () => {
+      syncNavigationState();
+      // New top-level page committed: refresh the per-page counters in the UI
+      if (this.activeTabId === tabId) {
+        this.notifyActiveTabChanged(tabRecord);
+      }
+    });
+
+    // Per-page counters (like Chrome/Brave): drop blocker stats, popups and detected media
+    // as soon as a new top-level document starts loading.
+    view.webContents.on('did-start-navigation', (event, ...legacyArgs) => {
+      const isSameDocument = typeof event.isSameDocument === 'boolean' ? event.isSameDocument : legacyArgs[0];
+      const isMainFrame = typeof event.isMainFrame === 'boolean' ? event.isMainFrame : legacyArgs[1];
+      if (!isMainFrame || isSameDocument) return;
+      adBlocker.resetTabStats(tabRecord.webContentsId);
+      popupBlocker.clearTab(tabRecord.webContentsId);
+      videoDownloader.clearTab(tabRecord.webContentsId);
+    });
+
     view.webContents.on('page-title-updated', (event, title) => {
       tabRecord.title = title || 'Nová záložka';
       this.notifyTabUpdated(tabRecord);
@@ -338,11 +369,14 @@ class TabManager {
     }
 
     // Check if input looks like a valid URL or a search query
-    const hasScheme = /^[a-zA-Z]+:\/\//.test(targetUrl);
-    const isDomain = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?(\/.*)?$/.test(targetUrl);
+    const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(targetUrl);
+    const isDomain = /^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?([/?#].*)?$/.test(targetUrl);
+    const isLocalAddress = /^(localhost|\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(:\d+)?([/?#].*)?$/i.test(targetUrl);
 
     if (hasScheme) {
       // standard URL
+    } else if (isLocalAddress) {
+      targetUrl = 'http://' + targetUrl;
     } else if (isDomain) {
       targetUrl = 'https://' + targetUrl;
     } else {
@@ -352,7 +386,8 @@ class TabManager {
         google: 'https://www.google.com/search?q=',
         duckduckgo: 'https://duckduckgo.com/?q=',
         bing: 'https://www.bing.com/search?q=',
-        brave: 'https://search.brave.com/search?q='
+        brave: 'https://search.brave.com/search?q=',
+        seznam: 'https://search.seznam.cz/?q='
       };
       const searchBase = engines[engine] || engines.google;
       targetUrl = searchBase + encodeURIComponent(targetUrl);
@@ -533,19 +568,19 @@ class TabManager {
 
   getWorkspaces() {
     return settingsManager.get('workspaces', [
-      { id: 'ws_default', name: 'Osobní', icon: '👤', color: '#6366f1' },
-      { id: 'ws_work', name: 'Práce', icon: '💼', color: '#10b981' },
-      { id: 'ws_dev', name: 'Vývoj', icon: '⚡', color: '#f59e0b' }
+      { id: 'ws_default', name: 'Osobní', icon: 'personal', color: '#f4f4f5' },
+      { id: 'ws_work', name: 'Práce', icon: 'work', color: '#d4d4d8' },
+      { id: 'ws_dev', name: 'Vývoj', icon: 'dev', color: '#a1a1aa' }
     ]);
   }
 
-  createWorkspace(name, icon = '📁', color = '#6366f1') {
+  createWorkspace(name, icon = 'folder', color = '#f4f4f5') {
     const list = [...this.getWorkspaces()];
     const newWs = {
       id: 'ws_' + Date.now(),
-      name: name.trim() || 'Nový prostor',
-      icon: icon || '📁',
-      color: color || '#6366f1'
+      name: (name || '').trim() || 'Nový prostor',
+      icon: icon || 'folder',
+      color: color || '#f4f4f5'
     };
     list.push(newWs);
     settingsManager.set('workspaces', list);

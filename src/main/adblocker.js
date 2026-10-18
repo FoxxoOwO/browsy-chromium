@@ -10,12 +10,70 @@ try {
   console.warn('[AdBlocker] Native Rust core not loaded, using JS engine:', e.message);
 }
 
+// Electron resource types -> names understood by the adblock-rust engine
+const REQUEST_TYPE_MAP = {
+  mainFrame: 'document',
+  subFrame: 'subdocument',
+  stylesheet: 'stylesheet',
+  script: 'script',
+  image: 'image',
+  font: 'font',
+  object: 'object',
+  xhr: 'xmlhttprequest',
+  ping: 'ping',
+  cspReport: 'csp_report',
+  media: 'media',
+  webSocket: 'websocket',
+  other: 'other'
+};
+
+// Known ad / tracker / miner hosts. A request is blocked when its hostname equals one of these
+// or is a subdomain of one. This is an O(depth) set lookup instead of ~70 unanchored regexes
+// (which e.g. matched "uploadform.com" for /adform\./ or any "track." host).
+const BLOCKED_HOSTS = new Set([
+  // Ad networks & exchanges
+  'doubleclick.net', 'googlesyndication.com', 'google-analytics.com', 'googleadservices.com',
+  'adnxs.com', 'advertising.com', 'criteo.com', 'criteo.net', 'taboola.com', 'outbrain.com',
+  'moatads.com', 'pubmatic.com', 'rubiconproject.com', 'amazon-adsystem.com', 'adroll.com',
+  'adform.net', 'adform.com', 'popads.net', 'popcash.net', 'propellerads.com', 'bidswitch.net',
+  'scorecardresearch.com', 'quantserve.com', 'smartadserver.com', 'openx.net', 'adzerk.net',
+  'serving-sys.com', 'casalemedia.com', 'indexww.com', '3lift.com', 'sharethrough.com',
+  'teads.tv', 'mgid.com', 'revcontent.com', 'exoclick.com', 'juicyads.com', 'trafficjunky.net',
+  'exponential.com',
+  // Czech / Slovak ad & tracking networks
+  'c.imedia.cz', 'ssp.imedia.cz', 'ssp.seznam.cz', 'c.seznam.cz', 'hit.gemius.pl', 'gemius.pl',
+  'bbelements.com', 'r2b2.cz', 'cpex.cz',
+  // Trackers & session recorders
+  'hotjar.com', 'clarity.ms', 'mouseflow.com', 'fullstory.com', 'logrocket.io', 'smartlook.com',
+  'chartbeat.com', 'pixel.facebook.com', 'analytics.twitter.com', 'analytics.tiktok.com',
+  'bat.bing.com', 'mc.yandex.ru',
+  // Cryptominers
+  'coinhive.com', 'coin-hive.com', 'webminepool.com'
+]);
+
+// Path heuristics - only used when the native engine is unavailable (the native engine already
+// ships proper EasyList-style path rules and these are prone to false positives).
+const FALLBACK_PATH_PATTERNS = [
+  /\/pagead\//,
+  /\/adbanner\//,
+  /\/adserver\//,
+  /\/popunder[./]/,
+  /\/show_ads\.js/,
+  /\/adsbygoogle\.js/
+];
+
+const BLOCKED_NOTIFY_THROTTLE_MS = 150;
+const HOST_CACHE_LIMIT = 500;
+
 class AdBlocker {
   constructor() {
-    this.statsByTab = new Map(); // tabId -> count
+    this.statsByTab = new Map(); // webContentsId -> blocked count
     this.totalBlocked = 0;
     this.onFiltersChanged = null;
     this.onAdBlocked = null;
+    this._notifyTimers = new Map();
+    this._hostCache = new Map();
+    this._lastNativeSignature = '';
     this.nativeBlocker = (nativeCore && nativeCore.NativeAdBlocker) ? new nativeCore.NativeAdBlocker() : null;
 
     this.defaultCosmeticSelectors = [
@@ -42,96 +100,8 @@ class AdBlocker {
 
     this.customCosmeticGlobal = [];
     this.customCosmeticByDomain = new Map(); // domain -> string[]
-    this.customCosmeticExceptions = new Set();
+    this.customCosmeticExceptions = new Map(); // domain ('' = global) -> Set<selector>
     this.customNetworkPatterns = [];
-
-    this.adPatterns = [
-      // Major ad networks & exchanges
-      /doubleclick\.net/,
-      /googlesyndication\.com/,
-      /google-analytics\.com/,
-      /googleadservices\.com/,
-      /googletagmanager\.com/,
-      /adnxs\.com/,
-      /advertising\.com/,
-      /criteo\./,
-      /taboola\.com/,
-      /outbrain\.com/,
-      /moatads\.com/,
-      /pubmatic\.com/,
-      /rubiconproject\.com/,
-      /amazon-adsystem\.com/,
-      /adsystem\./,
-      /adroll\.com/,
-      /adform\./,
-      /popads\.net/,
-      /popcash\.net/,
-      /propellerads\.com/,
-      /bidswitch\.net/,
-      /scorecardresearch\.com/,
-      /quantserve\.com/,
-      /exponential\.com/,
-      /yieldmanager\./,
-      /smartadserver\.com/,
-      /openx\.net/,
-      /adzerk\.net/,
-      /serving-sys\.com/,
-      /casalemedia\.com/,
-      /indexww\.com/,
-      /3lift\.com/,
-      /sharethrough\.com/,
-      /teads\.tv/,
-      /mgid\.com/,
-      /revcontent\.com/,
-      /exoclick\.com/,
-      /juicyads\.com/,
-      /trafficjunky\.net/,
-
-      // Czech / Slovak ad & tracking networks
-      /imedia\.cz/,
-      /ssp\.seznam\.cz/,
-      /c\.seznam\.cz/,
-      /sklik\.cz\/.*(reklama|ads|banner)/,
-      /hit\.gemius\.pl/,
-      /gemius\.pl/,
-      /bbelements\.com/,
-      /r2b2\.cz/,
-      /cpex\.cz/,
-
-      // Trackers & telemetry
-      /hotjar\.com/,
-      /clarity\.ms/,
-      /mouseflow\.com/,
-      /fullstory\.com/,
-      /logrocket\.io/,
-      /smartlook\.com/,
-      /chartbeat\.com/,
-      /connect\.facebook\.net\/.*\/fbevents\.js/,
-      /pixel\.facebook\.com/,
-      /analytics\.twitter\.com/,
-      /analytics\.tiktok\.com/,
-      /sc-static\.net\/scevent\.min\.js/,
-      /bat\.bing\.com/,
-      /mc\.yandex\.ru/,
-      /telemetry\./,
-      /track(er|ing)?\./,
-
-      // Cryptominers
-      /coinhive\.com/,
-      /coin-hive\.com/,
-      /cryptoloot\./,
-      /coin-have\./,
-      /webminepool\.com/,
-
-      // Common ad path patterns
-      /\/ads?\.(js|php|html)/,
-      /\/advert(s|isement|ing)?\//,
-      /\/pagead\//,
-      /\/sponsor(ed)?\//,
-      /\/adbanner\//,
-      /\/adserver\//,
-      /\/popunder\//
-    ];
 
     this.reloadCustomFilters(false);
   }
@@ -139,42 +109,48 @@ class AdBlocker {
   init() {
     const ses = session.defaultSession;
 
-    ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
-      // Don't block browser internal URLs
-      if (details.url.startsWith('chrome-extension://') ||
-          details.url.startsWith('browsy://') ||
-          details.url.startsWith('file://') ||
-          details.url.startsWith('devtools://')) {
-        return callback({ cancel: false });
-      }
+    // Only intercept network schemes that can carry ads (skips file:, chrome-extension:, devtools:, data:)
+    const filter = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] };
 
+    ses.webRequest.onBeforeRequest(filter, (details, callback) => {
       if (!settingsManager.get('shieldsEnabled', true)) {
         return callback({ cancel: false });
       }
 
-      // Check if target or initiating domain is whitelisted
-      if (this.isWhitelisted(details.url) || (details.referrer && this.isWhitelisted(details.referrer))) {
+      const url = details.url;
+      const isMainFrame = details.resourceType === 'mainFrame';
+
+      // The page that issued the request. For top-level navigations webContents.getURL() still
+      // returns the previous page, so the target itself is the source there.
+      let sourceUrl = '';
+      if (isMainFrame) {
+        sourceUrl = url;
+      } else {
+        const wc = details.webContents;
+        if (wc && !wc.isDestroyed()) {
+          sourceUrl = wc.getURL();
+        }
+        sourceUrl = sourceUrl || details.referrer || '';
+      }
+
+      if (this.isWhitelisted(url) || (sourceUrl && this.isWhitelisted(sourceUrl))) {
         return callback({ cancel: false });
       }
 
-      // Don't block main_frame navigation unless explicitly matched by a custom network rule
-      if (details.resourceType === 'mainFrame') {
-        const blockedByCustom = this.customNetworkPatterns.some(pattern => pattern.test(details.url));
-        if (!blockedByCustom) {
+      // Never block top-level navigations unless the user explicitly added a network rule for them
+      if (isMainFrame) {
+        if (!this.customNetworkPatterns.some(pattern => pattern.test(url))) {
           return callback({ cancel: false });
         }
       }
 
-      // Check against ad patterns using Rust Brave engine + custom rules
-      if (this.matchesAdPattern(details.url, details.referrer || '', details.resourceType || 'other')) {
+      const requestType = REQUEST_TYPE_MAP[details.resourceType] || 'other';
+      if (this.matchesAdPattern(url, sourceUrl, requestType)) {
         this.totalBlocked++;
         const tabId = details.webContentsId || details.tabId;
         if (tabId) {
-          const current = this.statsByTab.get(tabId) || 0;
-          this.statsByTab.set(tabId, current + 1);
-          if (typeof this.onAdBlocked === 'function') {
-            this.onAdBlocked(tabId, current + 1, this.totalBlocked);
-          }
+          this.statsByTab.set(tabId, (this.statsByTab.get(tabId) || 0) + 1);
+          this._scheduleBlockedNotify(tabId);
         }
         return callback({ cancel: true });
       }
@@ -183,11 +159,56 @@ class AdBlocker {
     });
   }
 
+  /**
+   * Coalesces bursts of blocked requests into one UI notification per tab.
+   * Pages with heavy tracking can block hundreds of requests per second.
+   */
+  _scheduleBlockedNotify(tabId) {
+    if (this._notifyTimers.has(tabId)) return;
+    const timer = setTimeout(() => {
+      this._notifyTimers.delete(tabId);
+      if (typeof this.onAdBlocked === 'function') {
+        this.onAdBlocked(tabId, this.statsByTab.get(tabId) || 0, this.totalBlocked);
+      }
+    }, BLOCKED_NOTIFY_THROTTLE_MS);
+    this._notifyTimers.set(tabId, timer);
+  }
+
+  /**
+   * Cached hostname extraction (the same few origins are parsed thousands of times per page load).
+   */
+  _hostOf(url) {
+    if (!url) return '';
+    let host = this._hostCache.get(url);
+    if (host !== undefined) return host;
+    try {
+      host = new URL(url).hostname.toLowerCase();
+    } catch (e) {
+      host = '';
+    }
+    if (this._hostCache.size >= HOST_CACHE_LIMIT) {
+      this._hostCache.clear();
+    }
+    this._hostCache.set(url, host);
+    return host;
+  }
+
+  _hostMatchesSet(hostname, set) {
+    let host = hostname;
+    while (host) {
+      if (set.has(host)) return true;
+      const dot = host.indexOf('.');
+      if (dot === -1) return false;
+      host = host.slice(dot + 1);
+    }
+    return false;
+  }
+
   reloadCustomFilters(notify = true) {
     const rules = settingsManager.get('customFilters', []);
     this.customCosmeticGlobal = [];
     this.customCosmeticByDomain = new Map();
-    this.customCosmeticExceptions = new Set();
+    this.customCosmeticExceptions = new Map();
     this.customNetworkPatterns = [];
     const networkRuleStrings = [];
 
@@ -196,21 +217,34 @@ class AdBlocker {
       const rule = rawRule.trim();
       if (!rule || rule.startsWith('!') || rule.startsWith('# ')) continue;
 
+      // Procedural / scriptlet cosmetic filters are not supported - ignore instead of
+      // misinterpreting them as network patterns.
+      if (rule.includes('#?#') || rule.includes('#$#') || rule.includes('#%#') || rule.includes('#@?#')) continue;
+
       // Exception cosmetic rule: domain#@#selector or #@#selector
-      if (rule.includes('#@#')) {
-        const parts = rule.split('#@#');
-        const selector = parts.slice(1).join('#@#').trim();
+      const excIdx = rule.indexOf('#@#');
+      if (excIdx !== -1) {
+        const domainPart = rule.slice(0, excIdx).trim();
+        const selector = rule.slice(excIdx + 3).trim();
         if (selector) {
-          this.customCosmeticExceptions.add(selector);
+          const domains = domainPart
+            ? domainPart.split(',').map(d => d.trim().toLowerCase().replace(/^\*\./, '')).filter(Boolean)
+            : [''];
+          for (const d of domains) {
+            if (!this.customCosmeticExceptions.has(d)) {
+              this.customCosmeticExceptions.set(d, new Set());
+            }
+            this.customCosmeticExceptions.get(d).add(selector);
+          }
         }
         continue;
       }
 
       // Cosmetic hiding rule: domain.com##.selector or ##.selector
-      if (rule.includes('##')) {
-        const idx = rule.indexOf('##');
-        const domainPart = rule.slice(0, idx).trim();
-        const selector = rule.slice(idx + 2).trim();
+      const hideIdx = rule.indexOf('##');
+      if (hideIdx !== -1) {
+        const domainPart = rule.slice(0, hideIdx).trim();
+        const selector = rule.slice(hideIdx + 2).trim();
         if (!selector) continue;
 
         if (!domainPart || domainPart === '*') {
@@ -235,9 +269,15 @@ class AdBlocker {
       }
     }
 
-    if (this.nativeBlocker && typeof this.nativeBlocker.reloadWithCustomRules === 'function') {
+    // Rebuilding the native engine re-parses every list, so do it only when the network rules
+    // actually changed (picking a page element only touches cosmetic rules).
+    const signature = networkRuleStrings.join('\n');
+    if (this.nativeBlocker &&
+        typeof this.nativeBlocker.reloadWithCustomRules === 'function' &&
+        signature !== this._lastNativeSignature) {
       try {
         this.nativeBlocker.reloadWithCustomRules(networkRuleStrings);
+        this._lastNativeSignature = signature;
       } catch (e) {
         console.warn('[AdBlocker] Failed to reload native custom rules:', e.message);
       }
@@ -251,7 +291,7 @@ class AdBlocker {
   _networkRuleToRegex(rule) {
     try {
       let cleaned = rule.trim();
-      // Ignore exception rules in simple regex fallback
+      // Exception rules are only honored by the native engine
       if (cleaned.startsWith('@@')) return null;
       // Strip ABP options like $script,third-party
       const dollarIdx = cleaned.indexOf('$');
@@ -335,12 +375,7 @@ class AdBlocker {
       return [];
     }
 
-    let hostname = '';
-    try {
-      hostname = new URL(url).hostname.toLowerCase();
-    } catch (e) {
-      return [];
-    }
+    const hostname = this._hostOf(url);
     if (!hostname) return [];
 
     const selectors = new Set([
@@ -356,36 +391,43 @@ class AdBlocker {
       }
     }
 
-    for (const exc of this.customCosmeticExceptions) {
-      selectors.delete(exc);
+    // Exceptions are scoped: "site.cz#@#.x" only un-hides .x on site.cz, "#@#.x" everywhere
+    for (const [domain, excSelectors] of this.customCosmeticExceptions.entries()) {
+      if (domain === '' || hostname === domain || hostname.endsWith('.' + domain)) {
+        for (const s of excSelectors) {
+          selectors.delete(s);
+        }
+      }
     }
 
     return Array.from(selectors);
   }
 
   matchesAdPattern(url, sourceUrl = '', requestType = 'other') {
-    if (this.customNetworkPatterns.some(pattern => pattern.test(url))) {
+    if (this.customNetworkPatterns.length > 0 && this.customNetworkPatterns.some(pattern => pattern.test(url))) {
       return true;
     }
-    if (this.nativeBlocker) {
-      if (this.nativeBlocker.shouldBlock(url, sourceUrl, requestType)) {
-        return true;
-      }
+    if (this.nativeBlocker && this.nativeBlocker.shouldBlock(url, sourceUrl, requestType)) {
+      return true;
     }
-    return this.adPatterns.some(pattern => pattern.test(url));
+    if (this._hostMatchesSet(this._hostOf(url), BLOCKED_HOSTS)) {
+      return true;
+    }
+    if (!this.nativeBlocker) {
+      return FALLBACK_PATH_PATTERNS.some(pattern => pattern.test(url));
+    }
+    return false;
   }
 
   isWhitelisted(url) {
-    try {
-      const hostname = new URL(url).hostname.toLowerCase();
-      const list = settingsManager.get('shieldsWhitelist', []);
-      return list.some(item => {
-        const clean = String(item).toLowerCase();
-        return hostname === clean || hostname.endsWith('.' + clean);
-      });
-    } catch (e) {
-      return false;
+    const hostname = this._hostOf(url);
+    if (!hostname) return false;
+    const list = settingsManager.get('shieldsWhitelist', []);
+    for (const item of list) {
+      const clean = String(item).toLowerCase();
+      if (hostname === clean || hostname.endsWith('.' + clean)) return true;
     }
+    return false;
   }
 
   toggleWhitelist(hostname) {
@@ -411,6 +453,11 @@ class AdBlocker {
 
   resetTabStats(tabId) {
     this.statsByTab.delete(tabId);
+    const timer = this._notifyTimers.get(tabId);
+    if (timer) {
+      clearTimeout(timer);
+      this._notifyTimers.delete(tabId);
+    }
   }
 
   getTotalBlocked() {

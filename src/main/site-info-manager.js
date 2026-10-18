@@ -14,8 +14,14 @@ class SiteInfoManager {
   initPermissionsHandler() {
     if (!app || !app.isReady() || !session || !session.defaultSession) return;
 
+    // Permissions that can reach outside of the page sandbox are never granted implicitly
+    const ALWAYS_DENY = new Set(['openExternal', 'hid', 'serial', 'usb']);
+
     // Handle web permission requests (camera, mic, geolocation, notifications)
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if (ALWAYS_DENY.has(permission)) {
+        return callback(false);
+      }
       const reqUrl = details.requestingUrl || webContents.getURL();
       try {
         const origin = new URL(reqUrl).origin;
@@ -182,7 +188,7 @@ class SiteInfoManager {
       // Clear storage
       await session.defaultSession.clearStorageData({
         origin,
-        storages: ['cookies', 'localstorage', 'cache', 'indexdb', 'websql', 'serviceworkers']
+        storages: ['cookies', 'localstorage', 'indexdb', 'serviceworkers', 'cachestorage', 'filesystem']
       });
 
       // Also clean matching domain cookies

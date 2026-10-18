@@ -1,8 +1,22 @@
 const settingsManager = require('./settings');
 
+// Popups opened within this window after a real mouse/keyboard input count as user initiated
+const USER_GESTURE_WINDOW_MS = 1500;
+
+// Hostnames of known popup/popunder ad networks (matched on the host itself or any parent domain)
+const POPUP_AD_HOSTS = [
+  'popcash.net', 'popads.net', 'propellerads.com', 'exoclick.com', 'juicyads.com',
+  'trafficjunky.net', 'adsterra.com', 'hilltopads.net', 'onclickads.net', 'clickadu.com',
+  'popunder.net', 'ero-advertising.com', 'adcash.com', 'mgid.com', 'revcontent.com'
+];
+
+// Heuristic words that are suspicious only when the popup was NOT opened by the user
+const SUSPICIOUS_HOST_WORDS = /(casino|betting|redirect|affiliate|onclick|popunder|clickid|trk\d*\.)/i;
+
 class PopupBlocker {
   constructor() {
     this.blockedPopupsByTab = new Map(); // webContentsId -> Array<{ url, time, id }>
+    this.lastUserInputByTab = new Map(); // webContentsId -> timestamp
     this.totalBlocked = 0;
     this.onPopupBlockedCallback = null;
   }
@@ -12,6 +26,16 @@ class PopupBlocker {
   }
 
   attachToWebContents(webContents, onAllowedTabCreate) {
+    const tabId = webContents.id;
+
+    // Track genuine user input so user-initiated popups (OAuth login, payments) are not blocked
+    webContents.on('before-input-event', (event, input) => {
+      if (input.type === 'mouseDown' || input.type === 'keyDown' || input.type === 'touchStart') {
+        this.lastUserInputByTab.set(tabId, Date.now());
+      }
+    });
+    webContents.once('destroyed', () => this.lastUserInputByTab.delete(tabId));
+
     webContents.setWindowOpenHandler((details) => {
       const targetUrl = details.url;
       const currentUrl = webContents.getURL();
@@ -24,8 +48,7 @@ class PopupBlocker {
         return { action: 'allow' };
       };
 
-      const enabled = settingsManager.get('popupBlockerEnabled', true);
-      if (!enabled) {
+      if (!settingsManager.get('popupBlockerEnabled', true)) {
         return allowHandler();
       }
 
@@ -34,14 +57,11 @@ class PopupBlocker {
         return allowHandler();
       }
 
-      // Check if this looks like a popup ad or unsolicited window
-      // User gestures can still be abused by clicking anywhere on shady streaming / download sites.
-      // We block popups to external advertising origins or when opened without explicit standard target.
-      const isSuspicious = this.isSuspiciousPopup(targetUrl, currentUrl, details);
+      const lastInput = this.lastUserInputByTab.get(tabId) || 0;
+      const hasUserGesture = (Date.now() - lastInput) <= USER_GESTURE_WINDOW_MS;
 
-      if (isSuspicious) {
+      if (this.isSuspiciousPopup(targetUrl, currentUrl, details, hasUserGesture)) {
         this.totalBlocked++;
-        const tabId = webContents.id;
         const list = this.blockedPopupsByTab.get(tabId) || [];
         const record = {
           id: 'popup_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -50,6 +70,8 @@ class PopupBlocker {
           disposition: details.disposition
         };
         list.push(record);
+        // Keep memory bounded on pages that spam popups
+        if (list.length > 50) list.shift();
         this.blockedPopupsByTab.set(tabId, list);
 
         if (this.onPopupBlockedCallback) {
@@ -64,26 +86,39 @@ class PopupBlocker {
     });
   }
 
-  isSuspiciousPopup(targetUrl, sourceUrl, details) {
-    if (!targetUrl || targetUrl === 'about:blank') {
+  isAdHost(hostname) {
+    return POPUP_AD_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+  }
+
+  isSuspiciousPopup(targetUrl, sourceUrl, details, hasUserGesture = false) {
+    let targetHost = '';
+    try {
+      targetHost = targetUrl ? new URL(targetUrl).hostname.toLowerCase() : '';
+    } catch (e) {
+      // Unparseable URL: let the browser handle it unless nobody asked for it
+      return !hasUserGesture;
+    }
+
+    // Known popup ad networks are blocked even right after a click (click-hijacking)
+    if (targetHost && this.isAdHost(targetHost)) {
       return true;
     }
 
+    // Anything the user explicitly triggered is allowed
+    if (hasUserGesture) {
+      return false;
+    }
+
+    // Without user gesture: blank windows and cross-site windows are very likely ads/popunders
+    if (!targetUrl || targetUrl === 'about:blank') {
+      return true;
+    }
+    if (SUSPICIOUS_HOST_WORDS.test(targetHost)) {
+      return true;
+    }
     try {
-      const targetHost = new URL(targetUrl).hostname;
-      const sourceHost = sourceUrl ? new URL(sourceUrl).hostname : '';
-
-      // Ad/redirect domains are always blocked as popups
-      const adDomains = [
-        /popcash/, /popads/, /propellerads/, /bet/, /casino/, /click/,
-        /traffic/, /redirect/, /affiliate/, /onclick/, /syndication/
-      ];
-      if (adDomains.some(re => re.test(targetHost))) {
-        return true;
-      }
-
-      // Different domains opened via new-window disposition
-      if (details.disposition === 'new-window' && sourceHost && targetHost !== sourceHost) {
+      const sourceHost = sourceUrl ? new URL(sourceUrl).hostname.toLowerCase() : '';
+      if (sourceHost && targetHost !== sourceHost) {
         return true;
       }
     } catch (e) {
@@ -95,9 +130,12 @@ class PopupBlocker {
 
   isWhitelisted(url) {
     try {
-      const hostname = new URL(url).hostname;
+      const hostname = new URL(url).hostname.toLowerCase();
       const list = settingsManager.get('popupWhitelist', []);
-      return list.some(item => hostname === item || hostname.endsWith('.' + item));
+      return list.some(item => {
+        const clean = String(item).toLowerCase();
+        return hostname === clean || hostname.endsWith('.' + clean);
+      });
     } catch (e) {
       return false;
     }

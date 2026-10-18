@@ -14,10 +14,28 @@ const TabManager = require('./src/main/tab-manager');
 let mainWindow = null;
 let tabManager = null;
 
-// Allow self-signed or test protocols if needed
-app.commandLine.appendSwitch('ignore-certificate-errors', 'false');
-// Enable widevine / extensions
+// NOTE: Never pass 'ignore-certificate-errors' here - Chromium only checks the switch's
+// presence (not its value), so even "=false" would disable TLS certificate validation.
+// Enable experimental web platform features (needed by some extensions)
 app.commandLine.appendSwitch('enable-experimental-web-platform-features');
+
+// Only one Browsy instance may run at a time (shared userData would corrupt settings)
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
+
+// Make sure debounced settings are always persisted before exit
+app.on('before-quit', () => {
+  try { settingsManager.flush(); } catch (e) {}
+});
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -118,7 +136,17 @@ async function createWindow() {
 // -------------------------------------------------------------
 function setupIPC() {
   // Tabs
-  ipcMain.handle('tabs:create', (e, url) => tabManager.createTab(url));
+  ipcMain.handle('tabs:create', (e, url, options) => {
+    const safeOptions = {};
+    if (options && typeof options === 'object') {
+      if (typeof options.workspaceId === 'string') safeOptions.workspaceId = options.workspaceId;
+      if (typeof options.pinned === 'boolean') safeOptions.pinned = options.pinned;
+      if (typeof options.activate === 'boolean') safeOptions.activate = options.activate;
+    }
+    const tab = tabManager.createTab(typeof url === 'string' ? url : 'browsy://newtab', safeOptions);
+    // The tab record holds a native WebContentsView which cannot cross the IPC boundary
+    return { id: tab.id, url: tab.url, workspaceId: tab.workspaceId };
+  });
   ipcMain.handle('tabs:switch', (e, tabId) => tabManager.switchTab(tabId));
   ipcMain.handle('tabs:close', (e, tabId) => tabManager.closeTab(tabId));
   ipcMain.handle('tabs:navigate', (e, tabId, url) => tabManager.navigateTab(tabId, url));
@@ -339,6 +367,8 @@ function setupIPC() {
 // App Lifecycle
 // -------------------------------------------------------------
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
+
   // Initialize adblocker, site info permissions & video downloader
   adBlocker.init();
   siteInfoManager.init();

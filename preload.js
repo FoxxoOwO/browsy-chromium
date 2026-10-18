@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('browsyAPI', {
   // Tabs
-  createTab: (url) => ipcRenderer.invoke('tabs:create', url),
+  createTab: (url, options) => ipcRenderer.invoke('tabs:create', url, options),
   switchTab: (tabId) => ipcRenderer.invoke('tabs:switch', tabId),
   closeTab: (tabId) => ipcRenderer.invoke('tabs:close', tabId),
   navigate: (tabId, url) => ipcRenderer.invoke('tabs:navigate', tabId, url),

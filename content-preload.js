@@ -70,8 +70,30 @@ function formatVariables(text) {
     .replace(/{year}/gi, yearStr);
 }
 
+function debounce(fn, waitMs) {
+  let timer = null;
+  return (...args) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...args);
+    }, waitMs);
+  };
+}
+
+// Never carry typed characters over to another element
+document.addEventListener('focusin', () => { keyBuffer = ''; }, true);
+document.addEventListener('mousedown', () => { keyBuffer = ''; }, true);
+
 document.addEventListener('keydown', (e) => {
   if (!expanderEnabled || expanderSnippets.length === 0) return;
+
+  // Never record or expand anything typed into password fields
+  const t = e.target;
+  if (t && t.tagName === 'INPUT' && (t.type === 'password')) {
+    keyBuffer = '';
+    return;
+  }
 
   if (['Escape', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     keyBuffer = '';
@@ -182,9 +204,7 @@ function formatDuration(sec) {
 
 window.addEventListener('DOMContentLoaded', () => {
   inspectMediaElements();
-  const observer = new MutationObserver(() => {
-    inspectMediaElements();
-  });
+  const observer = new MutationObserver(debounce(inspectMediaElements, 600));
   observer.observe(document.body || document.documentElement, {
     childList: true,
     subtree: true
@@ -288,7 +308,7 @@ function setupChromeStore(extId) {
   };
 
   enhanceButtons();
-  const obs = new MutationObserver(enhanceButtons);
+  const obs = new MutationObserver(debounce(enhanceButtons, 250));
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 }
 
@@ -357,7 +377,7 @@ function setupOperaStore(slug) {
   };
 
   enhanceButtons();
-  const obs = new MutationObserver(enhanceButtons);
+  const obs = new MutationObserver(debounce(enhanceButtons, 250));
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 }
 
@@ -448,7 +468,7 @@ function setupAmoStore(slug) {
   };
 
   enhanceButtons();
-  const obs = new MutationObserver(enhanceButtons);
+  const obs = new MutationObserver(debounce(enhanceButtons, 250));
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 }
 
@@ -606,37 +626,55 @@ window.addEventListener('DOMContentLoaded', setupStoreIntegration);
 // -------------------------------------------------------------
 const COSMETIC_STYLE_ID = 'browsy-cosmetic-filters';
 
-function applyCosmeticSelectors(selectors) {
-  if (!Array.isArray(selectors)) return;
-  let styleEl = document.getElementById(COSMETIC_STYLE_ID);
-
-  if (selectors.length === 0) {
-    if (styleEl) styleEl.textContent = '';
+function whenDocumentElementReady(callback) {
+  if (document.documentElement) {
+    callback();
     return;
   }
-
-  // Validate selectors individually so one invalid custom selector doesn't break the whole stylesheet
-  const validRules = [];
-  for (const sel of selectors) {
-    if (!sel || typeof sel !== 'string') continue;
-    try {
-      document.querySelector(sel);
-      validRules.push(`${sel} { display: none !important; }`);
-    } catch (e) {
-      // Skip malformed CSS selector
+  // Preload scripts run before the document element exists - wait for it without polling
+  const obs = new MutationObserver(() => {
+    if (document.documentElement) {
+      obs.disconnect();
+      callback();
     }
-  }
+  });
+  obs.observe(document, { childList: true });
+}
 
-  if (!styleEl) {
-    styleEl = document.createElement('style');
-    styleEl.id = COSMETIC_STYLE_ID;
-    (document.head || document.documentElement).appendChild(styleEl);
-  }
-  styleEl.textContent = validRules.join('\n');
+function applyCosmeticSelectors(selectors) {
+  if (!Array.isArray(selectors)) return;
+
+  whenDocumentElementReady(() => {
+    let styleEl = document.getElementById(COSMETIC_STYLE_ID);
+
+    if (selectors.length === 0) {
+      if (styleEl) styleEl.textContent = '';
+      return;
+    }
+
+    // Validate selectors individually so one invalid custom selector doesn't break the whole stylesheet
+    const validRules = [];
+    for (const sel of selectors) {
+      if (!sel || typeof sel !== 'string') continue;
+      try {
+        document.querySelector(sel);
+        validRules.push(`${sel} { display: none !important; }`);
+      } catch (e) {
+        // Skip malformed CSS selector
+      }
+    }
+
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = COSMETIC_STYLE_ID;
+      (document.head || document.documentElement).appendChild(styleEl);
+    }
+    styleEl.textContent = validRules.join('\n');
+  });
 }
 
 function initCosmeticFilters() {
-  if (window.location.protocol === 'file:' || window.location.protocol === 'browsy:') return;
+  if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return;
   ipcRenderer.invoke('shields:get-cosmetic-filters', window.location.href)
     .then(selectors => {
       if (selectors) applyCosmeticSelectors(selectors);
@@ -644,10 +682,9 @@ function initCosmeticFilters() {
     .catch(() => {});
 }
 
-if (document.documentElement) {
-  initCosmeticFilters();
-}
-window.addEventListener('DOMContentLoaded', initCosmeticFilters);
+// Start right away - the IPC round trip overlaps with page parsing so rules are usually
+// applied before the first paint.
+initCosmeticFilters();
 
 ipcRenderer.on('browsy:cosmetic-filters-updated', (event, selectors) => {
   applyCosmeticSelectors(selectors);
@@ -699,14 +736,15 @@ function generateSmartSelector(el) {
     }
   }
 
-  // 2. Check for semantic ad/component attributes
-  const priorityAttrs = ['data-ad', 'data-ad-slot', 'data-ad-unit', 'data-testid', 'data-component', 'data-widget', 'aria-label', 'role'];
+  // 2. Check for semantic ad/component attributes (only if they identify the element almost uniquely)
+  const priorityAttrs = ['data-ad', 'data-ad-slot', 'data-ad-unit', 'data-testid', 'data-component', 'data-widget'];
   for (const attr of priorityAttrs) {
     const val = el.getAttribute(attr);
-    if (val && val.length < 60 && !val.includes('"')) {
+    if (val && val.length < 60 && !val.includes('"') && !val.includes('\\')) {
       const candidate = `${el.tagName.toLowerCase()}[${attr}="${val}"]`;
       try {
-        if (document.querySelectorAll(candidate).length >= 1) {
+        const matches = document.querySelectorAll(candidate);
+        if (matches.length >= 1 && matches.length <= 3 && Array.from(matches).includes(el)) {
           return candidate;
         }
       } catch (e) {}
@@ -1341,6 +1379,27 @@ function onPickerKeyDown(e) {
   }
 }
 
+// Pages commonly react to mousedown/pointerdown (navigation, menus, drag handlers),
+// so every pointer phase is swallowed - not only "click".
+const PICKER_SWALLOWED_EVENTS = ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'dblclick', 'auxclick'];
+
+function onPickerSwallow(e) {
+  if (!pickerActive || isBrowsyOverlayElement(e.target)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+}
+
+// Keep the highlight box aligned with its element when the page scrolls or resizes
+function onPickerViewportChange() {
+  if (!pickerActive) return;
+  if (pickerLocked) {
+    if (selectedElement && !previewActive) updateHighlightBox(selectedElement);
+  } else if (hoveredElement) {
+    updateHighlightBox(hoveredElement);
+  }
+}
+
 function startElementPicker(options = {}) {
   if (window.location.protocol === 'file:' || window.location.protocol === 'browsy:') return;
 
@@ -1357,6 +1416,9 @@ function startElementPicker(options = {}) {
   window.addEventListener('mousemove', onPickerMouseMove, true);
   window.addEventListener('click', onPickerClick, true);
   window.addEventListener('keydown', onPickerKeyDown, true);
+  window.addEventListener('scroll', onPickerViewportChange, true);
+  window.addEventListener('resize', onPickerViewportChange);
+  PICKER_SWALLOWED_EVENTS.forEach(type => window.addEventListener(type, onPickerSwallow, true));
 
   // If invoked from right-click context menu with specific (x, y) coordinates:
   if (typeof options.x === 'number' && typeof options.y === 'number') {
@@ -1381,6 +1443,9 @@ function stopElementPicker() {
   window.removeEventListener('mousemove', onPickerMouseMove, true);
   window.removeEventListener('click', onPickerClick, true);
   window.removeEventListener('keydown', onPickerKeyDown, true);
+  window.removeEventListener('scroll', onPickerViewportChange, true);
+  window.removeEventListener('resize', onPickerViewportChange);
+  PICKER_SWALLOWED_EVENTS.forEach(type => window.removeEventListener(type, onPickerSwallow, true));
 
   if (overlayRoot) {
     overlayRoot.remove();
