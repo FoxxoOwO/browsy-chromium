@@ -20,13 +20,15 @@ import android.widget.Toast
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import com.example.browsy.data.HistoryAndBookmarksManager
+import com.example.browsy.data.SettingsManager
 import com.example.browsy.expander.TextExpanderManager
 import com.example.browsy.shields.ShieldsEngine
 
 class TabManager(
   private val context: Context,
   private val historyAndBookmarksManager: HistoryAndBookmarksManager,
-  private val textExpanderManager: TextExpanderManager
+  private val textExpanderManager: TextExpanderManager,
+  private val settingsManager: SettingsManager
 ) {
 
   val tabs = mutableStateListOf<TabData>()
@@ -37,13 +39,14 @@ class TabManager(
 
   init {
     // Open default first tab
-    createTab("https://duckduckgo.com", isIncognito = false)
+    createTab(settingsManager.searchEngine.value.homeUrl, isIncognito = false)
   }
 
   @SuppressLint("SetJavaScriptEnabled")
-  fun createTab(initialUrl: String = "https://duckduckgo.com", isIncognito: Boolean = false): TabData {
+  fun createTab(initialUrl: String? = null, isIncognito: Boolean = false): TabData {
+    val startUrl = if (!initialUrl.isNullOrBlank()) initialUrl else settingsManager.searchEngine.value.homeUrl
     val tab = TabData(
-      url = initialUrl,
+      url = startUrl,
       title = if (isIncognito) "Anonymní záložka" else "Nová záložka",
       isIncognito = isIncognito
     )
@@ -55,7 +58,7 @@ class TabManager(
       )
 
       settings.apply {
-        javaScriptEnabled = true
+        javaScriptEnabled = settingsManager.javaScriptEnabled.value
         domStorageEnabled = true
         databaseEnabled = true
         loadWithOverviewMode = true
@@ -83,7 +86,7 @@ class TabManager(
           request: WebResourceRequest?
         ): WebResourceResponse? {
           val reqUrl = request?.url?.toString() ?: return null
-          if (ShieldsEngine.shouldBlock(reqUrl)) {
+          if (settingsManager.shieldsEnabled.value && ShieldsEngine.shouldBlock(reqUrl)) {
             tab.blockedCount++
             return ShieldsEngine.createEmptyResponse()
           }
@@ -114,8 +117,20 @@ class TabManager(
           tab.canGoBack = view?.canGoBack() == true
           tab.canGoForward = view?.canGoForward() == true
 
-          // Inject Shields cosmetic filter and Text Expander
-          view?.evaluateJavascript(ShieldsEngine.getCosmeticFilterScript(), null)
+          // Inject Shields cosmetic filter if enabled
+          if (settingsManager.shieldsEnabled.value && settingsManager.cosmeticFiltering.value) {
+            view?.evaluateJavascript(ShieldsEngine.getCosmeticFilterScript(), null)
+          }
+
+          // Inject Force Dark Mode if enabled
+          if (settingsManager.forceWebDarkMode.value) {
+            view?.evaluateJavascript(
+              "(function(){ if(!document.getElementById('browsy-dark-mode-style')){ var s=document.createElement('style'); s.id='browsy-dark-mode-style'; s.textContent='html{filter:invert(90%) hue-rotate(180deg)!important;background-color:#121212!important;} img,video,canvas,svg{filter:invert(100%) hue-rotate(180deg)!important;}'; (document.head||document.documentElement).appendChild(s); }})();",
+              null
+            )
+          }
+
+          // Inject Text Expander
           view?.evaluateJavascript(textExpanderManager.getInjectionScript(), null)
         }
 
@@ -157,16 +172,16 @@ class TabManager(
           isUserGesture: Boolean,
           resultMsg: android.os.Message?
         ): Boolean {
-          // Popup blocker logic: only allow user-initiated window creations in a new Browsy tab
-          if (isUserGesture) {
-            val newTab = createTab("about:blank", tab.isIncognito)
-            val transport = resultMsg?.obj as? WebView.WebViewTransport
-            transport?.webView = newTab.webView
-            resultMsg?.sendToTarget()
-            selectTab(newTab.id)
-            return true
+          // If popup blocker is enabled, only allow user-initiated window creations
+          if (settingsManager.popupBlockerEnabled.value && !isUserGesture) {
+            return false // Block unprompted popups
           }
-          return false // Block unprompted popups
+          val newTab = createTab("about:blank", tab.isIncognito)
+          val transport = resultMsg?.obj as? WebView.WebViewTransport
+          transport?.webView = newTab.webView
+          resultMsg?.sendToTarget()
+          selectTab(newTab.id)
+          return true
         }
       }
 
@@ -191,7 +206,7 @@ class TabManager(
         }
       }
 
-      loadUrl(initialUrl)
+      loadUrl(startUrl)
     }
 
     tab.webView = webView
@@ -214,7 +229,7 @@ class TabManager(
       removed.webView = null
 
       if (tabs.isEmpty()) {
-        createTab("https://duckduckgo.com", isIncognito = false)
+        createTab(settingsManager.searchEngine.value.homeUrl, isIncognito = false)
       } else if (activeTabId.value == id) {
         val nextIndex = (index - 1).coerceAtLeast(0)
         activeTabId.value = tabs[nextIndex].id
@@ -275,16 +290,24 @@ class TabManager(
     tab.webView?.reload()
   }
 
-  private fun formatUrl(input: String): String {
-    val trimmed = input.trim()
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("about:") || trimmed.startsWith("file:")) {
-      return trimmed
+  fun formatUrl(input: String): String {
+    return settingsManager.formatSearchUrl(input)
+  }
+
+  fun applySettingsToWebViews() {
+    tabs.forEach { tab ->
+      tab.webView?.settings?.javaScriptEnabled = settingsManager.javaScriptEnabled.value
+      if (settingsManager.forceWebDarkMode.value) {
+        tab.webView?.evaluateJavascript(
+          "(function(){ if(!document.getElementById('browsy-dark-mode-style')){ var s=document.createElement('style'); s.id='browsy-dark-mode-style'; s.textContent='html{filter:invert(90%) hue-rotate(180deg)!important;background-color:#121212!important;} img,video,canvas,svg{filter:invert(100%) hue-rotate(180deg)!important;}'; (document.head||document.documentElement).appendChild(s); }})();",
+          null
+        )
+      } else {
+        tab.webView?.evaluateJavascript(
+          "(function(){ var s=document.getElementById('browsy-dark-mode-style'); if(s) s.remove(); })();",
+          null
+        )
+      }
     }
-    // Check if it's a domain name (e.g. google.com, idnes.cz, github.com)
-    if (trimmed.contains(".") && !trimmed.contains(" ") && !trimmed.startsWith("?")) {
-      return "https://$trimmed"
-    }
-    // Otherwise execute search via DuckDuckGo
-    return "https://duckduckgo.com/?q=${Uri.encode(trimmed)}"
   }
 }

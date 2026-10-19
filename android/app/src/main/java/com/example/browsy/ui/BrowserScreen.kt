@@ -2,7 +2,25 @@ package com.example.browsy.ui
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,7 +40,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -42,13 +59,14 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
@@ -56,7 +74,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -68,6 +86,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -77,18 +96,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.browsy.data.Bookmark
 import com.example.browsy.data.HistoryAndBookmarksManager
-import com.example.browsy.data.HistoryItem
+import com.example.browsy.data.OmniboxPosition
+import com.example.browsy.data.SearchEngine
+import com.example.browsy.data.SettingsManager
 import com.example.browsy.expander.TextExpanderManager
-import com.example.browsy.expander.TextSnippet
 import com.example.browsy.tabs.TabData
 import com.example.browsy.tabs.TabManager
 import com.example.browsy.theme.BrowsyAccent
 import com.example.browsy.theme.BrowsyBackground
 import com.example.browsy.theme.BrowsyBorder
 import com.example.browsy.theme.BrowsyBorderFocused
-import com.example.browsy.theme.BrowsyBorderSubtle
 import com.example.browsy.theme.BrowsyCard
 import com.example.browsy.theme.BrowsyCardSelected
 import com.example.browsy.theme.BrowsyDanger
@@ -107,6 +125,7 @@ fun BrowserScreen(
   tabManager: TabManager,
   historyAndBookmarksManager: HistoryAndBookmarksManager,
   textExpanderManager: TextExpanderManager,
+  settingsManager: SettingsManager,
   modifier: Modifier = Modifier
 ) {
   val activeTab = tabManager.activeTab
@@ -121,10 +140,12 @@ fun BrowserScreen(
   var showBookmarksSheet by remember { mutableStateOf(false) }
   var showHistorySheet by remember { mutableStateOf(false) }
   var showExpanderSheet by remember { mutableStateOf(false) }
+  var showSettingsSheet by remember { mutableStateOf(false) }
 
   // System Back button handling
   BackHandler(enabled = true) {
     when {
+      showSettingsSheet -> showSettingsSheet = false
       showTabSwitcher -> showTabSwitcher = false
       showShieldsSheet -> showShieldsSheet = false
       showMenuSheet -> showMenuSheet = false
@@ -137,186 +158,50 @@ fun BrowserScreen(
     }
   }
 
+  val isOmniboxTop = settingsManager.omniboxPosition.value == OmniboxPosition.TOP
+
   Column(
     modifier = modifier
       .fillMaxSize()
       .background(BrowsyBackground)
   ) {
     // -------------------------------------------------------------
-    // 1. Top Omnibox (Address Bar)
+    // Top Bar (if Omnibox is positioned at top)
     // -------------------------------------------------------------
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(BrowsySurface)
-    ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        // Omnibox pill container
-        Row(
-          modifier = Modifier
-            .weight(1f)
-            .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(BrowsyCard)
-            .border(
-              1.dp,
-              if (isEditingUrl) BrowsyBorderFocused else BrowsyBorder,
-              RoundedCornerShape(22.dp)
-            )
-            .padding(horizontal = 12.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          // HTTPS lock icon
-          val isHttps = activeTab?.url?.startsWith("https://") == true
-          Icon(
-            imageVector = if (isHttps) Icons.Default.Lock else Icons.Default.Security,
-            contentDescription = "Security",
-            tint = if (isHttps) BrowsyTextSecondary else BrowsyTextMuted,
-            modifier = Modifier.size(16.dp)
-          )
-
-          Spacer(modifier = Modifier.width(8.dp))
-
-          if (isEditingUrl) {
-            BasicTextField(
-              value = urlInputText,
-              onValueChange = { urlInputText = it },
-              modifier = Modifier.weight(1f),
-              textStyle = TextStyle(
-                color = BrowsyTextPrimary,
-                fontSize = 14.sp,
-                fontFamily = FontFamily.Default
-              ),
-              cursorBrush = SolidColor(BrowsyAccent),
-              singleLine = true,
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-              keyboardActions = KeyboardActions(
-                onGo = {
-                  isEditingUrl = false
-                  focusManager.clearFocus()
-                  tabManager.loadUrl(urlInputText)
-                }
-              )
-            )
-            if (urlInputText.isNotEmpty()) {
-              IconButton(
-                onClick = { urlInputText = "" },
-                modifier = Modifier.size(24.dp)
-              ) {
-                Icon(
-                  Icons.Default.Close,
-                  contentDescription = "Clear",
-                  tint = BrowsyTextMuted,
-                  modifier = Modifier.size(16.dp)
-                )
-              }
-            }
-          } else {
-            // Display URL / Domain
-            val displayUrl = formatDisplayUrl(activeTab?.url ?: "")
-            Text(
-              text = displayUrl,
-              color = BrowsyTextPrimary,
-              fontSize = 14.sp,
-              fontWeight = FontWeight.Medium,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier
-                .weight(1f)
-                .clickable {
-                  urlInputText = activeTab?.url ?: ""
-                  isEditingUrl = true
-                }
-            )
-          }
-
-          Spacer(modifier = Modifier.width(6.dp))
-
-          // Shields Badge Pill
-          val blocked = activeTab?.blockedCount ?: 0
-          Row(
-            modifier = Modifier
-              .clip(RoundedCornerShape(12.dp))
-              .background(if (blocked > 0) Color(0xFF1E293B) else Color(0xFF27272A))
-              .clickable { showShieldsSheet = true }
-              .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              Icons.Default.Security,
-              contentDescription = "Shields",
-              tint = if (blocked > 0) BrowsyShieldGreen else BrowsyTextSecondary,
-              modifier = Modifier.size(13.dp)
-            )
-            if (blocked > 0) {
-              Spacer(modifier = Modifier.width(4.dp))
-              Text(
-                text = blocked.toString(),
-                color = BrowsyShieldGreen,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-              )
-            }
-          }
-
-          Spacer(modifier = Modifier.width(6.dp))
-
-          // Reload or Stop
-          if (activeTab?.isLoading == true) {
-            IconButton(
-              onClick = { tabManager.stopCurrent() },
-              modifier = Modifier.size(28.dp)
-            ) {
-              Icon(
-                Icons.Default.Close,
-                contentDescription = "Stop",
-                tint = BrowsyTextSecondary,
-                modifier = Modifier.size(16.dp)
-              )
-            }
-          } else {
-            IconButton(
-              onClick = { tabManager.reloadCurrent() },
-              modifier = Modifier.size(28.dp)
-            ) {
-              Icon(
-                Icons.Default.Refresh,
-                contentDescription = "Reload",
-                tint = BrowsyTextSecondary,
-                modifier = Modifier.size(16.dp)
-              )
-            }
-          }
-        }
-      }
-
-      // Linear Progress Bar
-      if (activeTab?.isLoading == true) {
-        LinearProgressIndicator(
-          progress = { (activeTab.progress / 100f).coerceIn(0f, 1f) },
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(2.dp),
-          color = BrowsyAccent,
-          trackColor = BrowsyBorder
-        )
-      } else {
-        Spacer(
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(BrowsyBorder)
-        )
-      }
+    if (isOmniboxTop) {
+      OmniboxBar(
+        activeTab = activeTab,
+        isEditingUrl = isEditingUrl,
+        urlInputText = urlInputText,
+        onUrlChange = { urlInputText = it },
+        onStartEditing = {
+          urlInputText = activeTab?.url ?: ""
+          isEditingUrl = true
+        },
+        onSubmitUrl = { url ->
+          isEditingUrl = false
+          tabManager.loadUrl(url)
+        },
+        onClearUrl = { urlInputText = "" },
+        onOpenShields = { showShieldsSheet = true },
+        onReload = { tabManager.reloadCurrent() },
+        onStop = { tabManager.stopCurrent() },
+        focusManager = focusManager
+      )
+      AnimatedProgressBar(
+        isLoading = activeTab?.isLoading == true,
+        progress = activeTab?.progress ?: 0
+      )
+    } else {
+      // Thin loading line at top if Omnibox is at bottom
+      AnimatedProgressBar(
+        isLoading = activeTab?.isLoading == true,
+        progress = activeTab?.progress ?: 0
+      )
     }
 
     // -------------------------------------------------------------
-    // 2. Main WebView Container
+    // Main WebView Container
     // -------------------------------------------------------------
     Box(
       modifier = Modifier
@@ -349,91 +234,53 @@ fun BrowserScreen(
     }
 
     // -------------------------------------------------------------
-    // 3. Bottom Navigation Bar
+    // Bottom Omnibox (if Omnibox is positioned at bottom)
     // -------------------------------------------------------------
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(BrowsySurface)
-        .border(1.dp, BrowsyBorder)
-        .padding(horizontal = 8.dp, vertical = 4.dp),
-      horizontalArrangement = Arrangement.SpaceAround,
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      // Back
-      IconButton(
-        onClick = { tabManager.goBack() },
-        enabled = activeTab?.canGoBack == true
-      ) {
-        Icon(
-          Icons.Default.ArrowBack,
-          contentDescription = "Zpět",
-          tint = if (activeTab?.canGoBack == true) BrowsyTextPrimary else BrowsyTextMuted
-        )
-      }
-
-      // Forward
-      IconButton(
-        onClick = { tabManager.goForward() },
-        enabled = activeTab?.canGoForward == true
-      ) {
-        Icon(
-          Icons.Default.ArrowForward,
-          contentDescription = "Vpřed",
-          tint = if (activeTab?.canGoForward == true) BrowsyTextPrimary else BrowsyTextMuted
-        )
-      }
-
-      // New Tab (+)
-      IconButton(
-        onClick = {
-          tabManager.createTab("https://duckduckgo.com", isIncognito = activeTab?.isIncognito ?: false)
-        }
-      ) {
-        Icon(
-          Icons.Default.Add,
-          contentDescription = "Nová záložka",
-          tint = BrowsyTextPrimary
-        )
-      }
-
-      // Tab Switcher with count badge
-      Box(
-        modifier = Modifier
-          .size(40.dp)
-          .clip(RoundedCornerShape(8.dp))
-          .clickable { showTabSwitcher = true },
-        contentAlignment = Alignment.Center
-      ) {
-        Box(
-          modifier = Modifier
-            .size(24.dp)
-            .border(1.5.dp, BrowsyTextPrimary, RoundedCornerShape(6.dp)),
-          contentAlignment = Alignment.Center
-        ) {
-          Text(
-            text = tabManager.tabs.size.toString(),
-            color = BrowsyTextPrimary,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-          )
-        }
-      }
-
-      // Menu
-      IconButton(onClick = { showMenuSheet = true }) {
-        Icon(
-          Icons.Default.MoreVert,
-          contentDescription = "Menu",
-          tint = BrowsyTextPrimary
-        )
-      }
+    if (!isOmniboxTop) {
+      OmniboxBar(
+        activeTab = activeTab,
+        isEditingUrl = isEditingUrl,
+        urlInputText = urlInputText,
+        onUrlChange = { urlInputText = it },
+        onStartEditing = {
+          urlInputText = activeTab?.url ?: ""
+          isEditingUrl = true
+        },
+        onSubmitUrl = { url ->
+          isEditingUrl = false
+          tabManager.loadUrl(url)
+        },
+        onClearUrl = { urlInputText = "" },
+        onOpenShields = { showShieldsSheet = true },
+        onReload = { tabManager.reloadCurrent() },
+        onStop = { tabManager.stopCurrent() },
+        focusManager = focusManager
+      )
     }
+
+    // -------------------------------------------------------------
+    // Bottom Navigation Bar
+    // -------------------------------------------------------------
+    BottomNavBar(
+      activeTab = activeTab,
+      tabCount = tabManager.tabs.size,
+      onGoBack = { tabManager.goBack() },
+      onGoForward = { tabManager.goForward() },
+      onNewTab = {
+        tabManager.createTab(
+          settingsManager.searchEngine.value.homeUrl,
+          isIncognito = activeTab?.isIncognito ?: false
+        )
+      },
+      onOpenTabSwitcher = { showTabSwitcher = true },
+      onOpenMenu = { showMenuSheet = true }
+    )
   }
 
   // -------------------------------------------------------------
-  // Tab Switcher Bottom Sheet / Grid
+  // Modals & Bottom Sheets
   // -------------------------------------------------------------
+
   if (showTabSwitcher) {
     ModalBottomSheet(
       onDismissRequest = { showTabSwitcher = false },
@@ -447,9 +294,6 @@ fun BrowserScreen(
     }
   }
 
-  // -------------------------------------------------------------
-  // Shields Bottom Sheet
-  // -------------------------------------------------------------
   if (showShieldsSheet) {
     ModalBottomSheet(
       onDismissRequest = { showShieldsSheet = false },
@@ -458,14 +302,12 @@ fun BrowserScreen(
     ) {
       ShieldsSheetView(
         activeTab = activeTab,
+        settingsManager = settingsManager,
         onClose = { showShieldsSheet = false }
       )
     }
   }
 
-  // -------------------------------------------------------------
-  // Overflow Menu Bottom Sheet
-  // -------------------------------------------------------------
   if (showMenuSheet) {
     ModalBottomSheet(
       onDismissRequest = { showMenuSheet = false },
@@ -479,14 +321,30 @@ fun BrowserScreen(
         onOpenBookmarks = { showMenuSheet = false; showBookmarksSheet = true },
         onOpenHistory = { showMenuSheet = false; showHistorySheet = true },
         onOpenExpander = { showMenuSheet = false; showExpanderSheet = true },
+        onOpenSettings = { showMenuSheet = false; showSettingsSheet = true },
         onClose = { showMenuSheet = false }
       )
     }
   }
 
-  // -------------------------------------------------------------
-  // Bookmarks Sheet
-  // -------------------------------------------------------------
+  if (showSettingsSheet) {
+    ModalBottomSheet(
+      onDismissRequest = { showSettingsSheet = false },
+      containerColor = BrowsySurface,
+      shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+    ) {
+      SettingsSheetView(
+        settingsManager = settingsManager,
+        tabManager = tabManager,
+        onOpenExpander = {
+          showSettingsSheet = false
+          showExpanderSheet = true
+        },
+        onClose = { showSettingsSheet = false }
+      )
+    }
+  }
+
   if (showBookmarksSheet) {
     ModalBottomSheet(
       onDismissRequest = { showBookmarksSheet = false },
@@ -504,9 +362,6 @@ fun BrowserScreen(
     }
   }
 
-  // -------------------------------------------------------------
-  // History Sheet
-  // -------------------------------------------------------------
   if (showHistorySheet) {
     ModalBottomSheet(
       onDismissRequest = { showHistorySheet = false },
@@ -524,9 +379,6 @@ fun BrowserScreen(
     }
   }
 
-  // -------------------------------------------------------------
-  // Text Expander Snippets Sheet
-  // -------------------------------------------------------------
   if (showExpanderSheet) {
     ModalBottomSheet(
       onDismissRequest = { showExpanderSheet = false },
@@ -542,7 +394,301 @@ fun BrowserScreen(
 }
 
 // -------------------------------------------------------------
-// Sub-views & Components
+// Omnibox Bar Component
+// -------------------------------------------------------------
+
+@Composable
+fun OmniboxBar(
+  activeTab: TabData?,
+  isEditingUrl: Boolean,
+  urlInputText: String,
+  onUrlChange: (String) -> Unit,
+  onStartEditing: () -> Unit,
+  onSubmitUrl: (String) -> Unit,
+  onClearUrl: () -> Unit,
+  onOpenShields: () -> Unit,
+  onReload: () -> Unit,
+  onStop: () -> Unit,
+  focusManager: androidx.compose.ui.focus.FocusManager
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(BrowsySurface)
+      .padding(horizontal = 12.dp, vertical = 8.dp),
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Row(
+      modifier = Modifier
+        .weight(1f)
+        .height(44.dp)
+        .clip(RoundedCornerShape(22.dp))
+        .background(BrowsyCard)
+        .border(
+          1.dp,
+          if (isEditingUrl) BrowsyBorderFocused else BrowsyBorder,
+          RoundedCornerShape(22.dp)
+        )
+        .padding(horizontal = 12.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      val isHttps = activeTab?.url?.startsWith("https://") == true
+      Icon(
+        imageVector = if (isHttps) Icons.Default.Lock else Icons.Default.Security,
+        contentDescription = "Security",
+        tint = if (isHttps) BrowsyTextSecondary else BrowsyTextMuted,
+        modifier = Modifier.size(16.dp)
+      )
+
+      Spacer(modifier = Modifier.width(8.dp))
+
+      if (isEditingUrl) {
+        BasicTextField(
+          value = urlInputText,
+          onValueChange = onUrlChange,
+          modifier = Modifier.weight(1f),
+          textStyle = TextStyle(
+            color = BrowsyTextPrimary,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Default
+          ),
+          cursorBrush = SolidColor(BrowsyAccent),
+          singleLine = true,
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+          keyboardActions = KeyboardActions(
+            onGo = {
+              focusManager.clearFocus()
+              onSubmitUrl(urlInputText)
+            }
+          )
+        )
+        AnimatedVisibility(
+          visible = urlInputText.isNotEmpty(),
+          enter = fadeIn() + scaleIn(),
+          exit = fadeOut() + scaleOut()
+        ) {
+          IconButton(
+            onClick = onClearUrl,
+            modifier = Modifier.size(24.dp)
+          ) {
+            Icon(
+              Icons.Default.Close,
+              contentDescription = "Clear",
+              tint = BrowsyTextMuted,
+              modifier = Modifier.size(16.dp)
+            )
+          }
+        }
+      } else {
+        val displayUrl = formatDisplayUrl(activeTab?.url ?: "")
+        Text(
+          text = displayUrl,
+          color = BrowsyTextPrimary,
+          fontSize = 14.sp,
+          fontWeight = FontWeight.Medium,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier
+            .weight(1f)
+            .clickable { onStartEditing() }
+        )
+      }
+
+      Spacer(modifier = Modifier.width(6.dp))
+
+      // Shields Badge with Animated Counter
+      val blocked = activeTab?.blockedCount ?: 0
+      Row(
+        modifier = Modifier
+          .clip(RoundedCornerShape(12.dp))
+          .background(if (blocked > 0) Color(0xFF1E293B) else Color(0xFF27272A))
+          .clickable { onOpenShields() }
+          .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Icon(
+          Icons.Default.Security,
+          contentDescription = "Shields",
+          tint = if (blocked > 0) BrowsyShieldGreen else BrowsyTextSecondary,
+          modifier = Modifier.size(13.dp)
+        )
+        if (blocked > 0) {
+          Spacer(modifier = Modifier.width(4.dp))
+          AnimatedContent(
+            targetState = blocked,
+            transitionSpec = {
+              (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
+            },
+            label = "ShieldsCounter"
+          ) { count ->
+            Text(
+              text = count.toString(),
+              color = BrowsyShieldGreen,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold
+            )
+          }
+        }
+      }
+
+      Spacer(modifier = Modifier.width(6.dp))
+
+      // Reload or Stop
+      if (activeTab?.isLoading == true) {
+        IconButton(
+          onClick = onStop,
+          modifier = Modifier.size(28.dp)
+        ) {
+          Icon(
+            Icons.Default.Close,
+            contentDescription = "Stop",
+            tint = BrowsyTextSecondary,
+            modifier = Modifier.size(16.dp)
+          )
+        }
+      } else {
+        IconButton(
+          onClick = onReload,
+          modifier = Modifier.size(28.dp)
+        ) {
+          Icon(
+            Icons.Default.Refresh,
+            contentDescription = "Reload",
+            tint = BrowsyTextSecondary,
+            modifier = Modifier.size(16.dp)
+          )
+        }
+      }
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// Animated Progress Bar Component
+// -------------------------------------------------------------
+
+@Composable
+fun AnimatedProgressBar(
+  isLoading: Boolean,
+  progress: Int
+) {
+  val animatedProgress by animateFloatAsState(
+    targetValue = (progress / 100f).coerceIn(0f, 1f),
+    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+    label = "SmoothLoadingProgress"
+  )
+
+  AnimatedVisibility(
+    visible = isLoading,
+    enter = fadeIn(animationSpec = tween(120)) + expandVertically(),
+    exit = fadeOut(animationSpec = tween(250)) + shrinkVertically()
+  ) {
+    LinearProgressIndicator(
+      progress = { animatedProgress },
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(2.5.dp),
+      color = BrowsyAccent,
+      trackColor = BrowsyBorder
+    )
+  }
+}
+
+// -------------------------------------------------------------
+// Bottom Navigation Bar Component
+// -------------------------------------------------------------
+
+@Composable
+fun BottomNavBar(
+  activeTab: TabData?,
+  tabCount: Int,
+  onGoBack: () -> Unit,
+  onGoForward: () -> Unit,
+  onNewTab: () -> Unit,
+  onOpenTabSwitcher: () -> Unit,
+  onOpenMenu: () -> Unit
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(BrowsySurface)
+      .border(1.dp, BrowsyBorder)
+      .padding(horizontal = 8.dp, vertical = 4.dp),
+    horizontalArrangement = Arrangement.SpaceAround,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    IconButton(
+      onClick = onGoBack,
+      enabled = activeTab?.canGoBack == true
+    ) {
+      Icon(
+        Icons.Default.ArrowBack,
+        contentDescription = "Zpět",
+        tint = if (activeTab?.canGoBack == true) BrowsyTextPrimary else BrowsyTextMuted
+      )
+    }
+
+    IconButton(
+      onClick = onGoForward,
+      enabled = activeTab?.canGoForward == true
+    ) {
+      Icon(
+        Icons.Default.ArrowForward,
+        contentDescription = "Vpřed",
+        tint = if (activeTab?.canGoForward == true) BrowsyTextPrimary else BrowsyTextMuted
+      )
+    }
+
+    IconButton(onClick = onNewTab) {
+      Icon(
+        Icons.Default.Add,
+        contentDescription = "Nová záložka",
+        tint = BrowsyTextPrimary
+      )
+    }
+
+    Box(
+      modifier = Modifier
+        .size(40.dp)
+        .clip(RoundedCornerShape(8.dp))
+        .clickable { onOpenTabSwitcher() },
+      contentAlignment = Alignment.Center
+    ) {
+      Box(
+        modifier = Modifier
+          .size(24.dp)
+          .border(1.5.dp, BrowsyTextPrimary, RoundedCornerShape(6.dp)),
+        contentAlignment = Alignment.Center
+      ) {
+        AnimatedContent(
+          targetState = tabCount,
+          transitionSpec = {
+            (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
+          },
+          label = "TabCountBadge"
+        ) { count ->
+          Text(
+            text = count.toString(),
+            color = BrowsyTextPrimary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      }
+    }
+
+    IconButton(onClick = onOpenMenu) {
+      Icon(
+        Icons.Default.MoreVert,
+        contentDescription = "Menu",
+        tint = BrowsyTextPrimary
+      )
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// Tab Switcher View with Category Animations
 // -------------------------------------------------------------
 
 @Composable
@@ -550,17 +696,15 @@ fun TabSwitcherView(
   tabManager: TabManager,
   onClose: () -> Unit
 ) {
-  var selectedTabType by remember { mutableIntStateOf(0) } // 0 = Normální, 1 = Anonymní
+  var selectedTabType by remember { mutableIntStateOf(0) } // 0 = Standard, 1 = Incognito
   val normalTabs = tabManager.tabs.filter { !it.isIncognito }
   val incognitoTabs = tabManager.tabs.filter { it.isIncognito }
-  val currentList = if (selectedTabType == 0) normalTabs else incognitoTabs
 
   Column(
     modifier = Modifier
       .fillMaxWidth()
       .padding(16.dp)
   ) {
-    // Header
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
@@ -585,7 +729,7 @@ fun TabSwitcherView(
         Spacer(modifier = Modifier.width(8.dp))
         IconButton(
           onClick = {
-            tabManager.createTab("https://duckduckgo.com", isIncognito = selectedTabType == 1)
+            tabManager.createTab(isIncognito = selectedTabType == 1)
             onClose()
           }
         ) {
@@ -596,7 +740,6 @@ fun TabSwitcherView(
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    // Tab Type Selector
     TabRow(
       selectedTabIndex = selectedTabType,
       containerColor = BrowsyCard,
@@ -622,36 +765,48 @@ fun TabSwitcherView(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Grid of Tab Cards
-    if (currentList.isEmpty()) {
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(180.dp),
-        contentAlignment = Alignment.Center
-      ) {
-        Text("Žádné otevřené záložky", color = BrowsyTextMuted, fontSize = 14.sp)
-      }
-    } else {
-      LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.height(380.dp)
-      ) {
-        items(currentList, key = { it.id }) { tab ->
-          val isSelected = tab.id == tabManager.activeTabId.value
-          TabCard(
-            tab = tab,
-            isSelected = isSelected,
-            onSelect = {
-              tabManager.selectTab(tab.id)
-              onClose()
-            },
-            onClose = {
-              tabManager.closeTab(tab.id)
-            }
-          )
+    AnimatedContent(
+      targetState = selectedTabType,
+      transitionSpec = {
+        if (targetState > initialState) {
+          (slideInHorizontally { it } + fadeIn()).togetherWith(slideOutHorizontally { -it } + fadeOut())
+        } else {
+          (slideInHorizontally { -it } + fadeIn()).togetherWith(slideOutHorizontally { it } + fadeOut())
+        }
+      },
+      label = "TabSwitcherCategoryTransition"
+    ) { tabType ->
+      val listToShow = if (tabType == 0) normalTabs else incognitoTabs
+      if (listToShow.isEmpty()) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text("Žádné otevřené záložky", color = BrowsyTextMuted, fontSize = 14.sp)
+        }
+      } else {
+        LazyVerticalGrid(
+          columns = GridCells.Fixed(2),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+          modifier = Modifier.height(380.dp)
+        ) {
+          items(listToShow, key = { it.id }) { tab ->
+            val isSelected = tab.id == tabManager.activeTabId.value
+            TabCard(
+              tab = tab,
+              isSelected = isSelected,
+              onSelect = {
+                tabManager.selectTab(tab.id)
+                onClose()
+              },
+              onClose = {
+                tabManager.closeTab(tab.id)
+              }
+            )
+          }
         }
       }
     }
@@ -665,17 +820,24 @@ fun TabCard(
   onSelect: () -> Unit,
   onClose: () -> Unit
 ) {
+  val borderColor by animateColorAsState(
+    targetValue = if (isSelected) BrowsyAccent else BrowsyBorder,
+    animationSpec = tween(200),
+    label = "TabCardBorder"
+  )
+  val backgroundColor by animateColorAsState(
+    targetValue = if (isSelected) BrowsyCardSelected else BrowsyCard,
+    animationSpec = tween(200),
+    label = "TabCardBg"
+  )
+
   Box(
     modifier = Modifier
       .fillMaxWidth()
       .height(130.dp)
       .clip(RoundedCornerShape(12.dp))
-      .background(if (isSelected) BrowsyCardSelected else BrowsyCard)
-      .border(
-        1.5.dp,
-        if (isSelected) BrowsyAccent else BrowsyBorder,
-        RoundedCornerShape(12.dp)
-      )
+      .background(backgroundColor)
+      .border(1.5.dp, borderColor, RoundedCornerShape(12.dp))
       .clickable { onSelect() }
       .padding(10.dp)
   ) {
@@ -698,7 +860,7 @@ fun TabCard(
           modifier = Modifier.weight(1f)
         )
         IconButton(
-          onClick = { onClose() },
+          onClick = onClose,
           modifier = Modifier.size(24.dp)
         ) {
           Icon(
@@ -736,14 +898,16 @@ fun TabCard(
   }
 }
 
+// -------------------------------------------------------------
+// Shields Sheet View
+// -------------------------------------------------------------
+
 @Composable
 fun ShieldsSheetView(
   activeTab: TabData?,
+  settingsManager: SettingsManager,
   onClose: () -> Unit
 ) {
-  var shieldsEnabled by remember { mutableStateOf(true) }
-  var cosmeticEnabled by remember { mutableStateOf(true) }
-
   Column(
     modifier = Modifier
       .fillMaxWidth()
@@ -776,7 +940,7 @@ fun ShieldsSheetView(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Big Stats Card
+    // Stats Card
     Box(
       modifier = Modifier
         .fillMaxWidth()
@@ -802,54 +966,385 @@ fun ShieldsSheetView(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // Toggles
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically
-    ) {
-      Column {
-        Text("Ochrana proti sledovačům", color = BrowsyTextPrimary, fontWeight = FontWeight.Medium)
-        Text("Blokuje síťové požadavky na reklamní servery", color = BrowsyTextMuted, fontSize = 12.sp)
-      }
-      Switch(
-        checked = shieldsEnabled,
-        onCheckedChange = { shieldsEnabled = it },
-        colors = SwitchDefaults.colors(
-          checkedThumbColor = BrowsyAccent,
-          checkedTrackColor = Color(0xFF27272A),
-          uncheckedTrackColor = BrowsyCard
-        )
-      )
-    }
+    SettingsToggle(
+      title = "Ochrana proti sledovačům",
+      subtitle = "Blokuje síťové požadavky na reklamní servery",
+      checked = settingsManager.shieldsEnabled.value,
+      onCheckedChange = { settingsManager.setShieldsEnabled(it) }
+    )
 
     Spacer(modifier = Modifier.height(12.dp))
     Divider(color = BrowsyBorder)
     Spacer(modifier = Modifier.height(12.dp))
 
+    SettingsToggle(
+      title = "Kosmetické filtrování",
+      subtitle = "Skrývá prázdná místa po zablokovaných bannerech",
+      checked = settingsManager.cosmeticFiltering.value,
+      onCheckedChange = { settingsManager.setCosmeticFiltering(it) }
+    )
+
+    Spacer(modifier = Modifier.height(20.dp))
+  }
+}
+
+// -------------------------------------------------------------
+// Settings Sheet View
+// -------------------------------------------------------------
+
+@Composable
+fun SettingsSheetView(
+  settingsManager: SettingsManager,
+  tabManager: TabManager,
+  onOpenExpander: () -> Unit,
+  onClose: () -> Unit
+) {
+  val context = LocalContext.current
+  var showClearConfirmDialog by remember { mutableStateOf(false) }
+
+  Column(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 20.dp, vertical = 16.dp)
+  ) {
+    // Header
     Row(
       modifier = Modifier.fillMaxWidth(),
       horizontalArrangement = Arrangement.SpaceBetween,
       verticalAlignment = Alignment.CenterVertically
     ) {
-      Column {
-        Text("Kosmetické filtrování", color = BrowsyTextPrimary, fontWeight = FontWeight.Medium)
-        Text("Skrývá prázdná místa po zablokovaných bannerech", color = BrowsyTextMuted, fontSize = 12.sp)
-      }
-      Switch(
-        checked = cosmeticEnabled,
-        onCheckedChange = { cosmeticEnabled = it },
-        colors = SwitchDefaults.colors(
-          checkedThumbColor = BrowsyAccent,
-          checkedTrackColor = Color(0xFF27272A),
-          uncheckedTrackColor = BrowsyCard
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+          Icons.Default.Settings,
+          contentDescription = "Nastavení",
+          tint = BrowsyAccent,
+          modifier = Modifier.size(22.dp)
         )
-      )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+          text = "Nastavení",
+          fontSize = 18.sp,
+          fontWeight = FontWeight.Bold,
+          color = BrowsyTextPrimary
+        )
+      }
+      IconButton(onClick = onClose) {
+        Icon(Icons.Default.Close, contentDescription = "Zavřít", tint = BrowsyTextMuted)
+      }
     }
 
-    Spacer(modifier = Modifier.height(20.dp))
+    Spacer(modifier = Modifier.height(14.dp))
+
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(480.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+      // 1. Vyhledávač
+      item {
+        SettingsSectionHeader("Výchozí vyhledávač")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+        ) {
+          SearchEngine.entries.forEachIndexed { index, engine ->
+            val isSelected = settingsManager.searchEngine.value == engine
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable { settingsManager.setSearchEngine(engine) }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = engine.title,
+                color = if (isSelected) BrowsyAccent else BrowsyTextPrimary,
+                fontSize = 14.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+              )
+              if (isSelected) {
+                Icon(
+                  Icons.Default.Check,
+                  contentDescription = "Vybráno",
+                  tint = BrowsyAccent,
+                  modifier = Modifier.size(18.dp)
+                )
+              }
+            }
+            if (index < SearchEngine.entries.size - 1) {
+              Divider(color = BrowsyBorder)
+            }
+          }
+        }
+      }
+
+      // 2. Rozvržení adresního řádku
+      item {
+        SettingsSectionHeader("Pozice adresního řádku")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+        ) {
+          OmniboxPosition.entries.forEachIndexed { index, pos ->
+            val isSelected = settingsManager.omniboxPosition.value == pos
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clickable { settingsManager.setOmniboxPosition(pos) }
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Text(
+                text = pos.title,
+                color = if (isSelected) BrowsyAccent else BrowsyTextPrimary,
+                fontSize = 14.sp,
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+              )
+              if (isSelected) {
+                Icon(
+                  Icons.Default.Check,
+                  contentDescription = "Vybráno",
+                  tint = BrowsyAccent,
+                  modifier = Modifier.size(18.dp)
+                )
+              }
+            }
+            if (index < OmniboxPosition.entries.size - 1) {
+              Divider(color = BrowsyBorder)
+            }
+          }
+        }
+      }
+
+      // 3. Ochrana soukromí a štíty
+      item {
+        SettingsSectionHeader("Ochrana soukromí a štíty")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          SettingsToggle(
+            title = "Aktivní Browsy Shields",
+            subtitle = "Blokuje reklamní skripty a sledovací prvky",
+            checked = settingsManager.shieldsEnabled.value,
+            onCheckedChange = { settingsManager.setShieldsEnabled(it) }
+          )
+          Divider(color = BrowsyBorder)
+          SettingsToggle(
+            title = "Kosmetické filtrování",
+            subtitle = "Odstraňuje prázdná místa a layout bannery",
+            checked = settingsManager.cosmeticFiltering.value,
+            onCheckedChange = { settingsManager.setCosmeticFiltering(it) }
+          )
+          Divider(color = BrowsyBorder)
+          SettingsToggle(
+            title = "Blokování vyskakovacích oken",
+            subtitle = "Zabraňuje nevyžádaným pop-up oknům",
+            checked = settingsManager.popupBlockerEnabled.value,
+            onCheckedChange = { settingsManager.setPopupBlockerEnabled(it) }
+          )
+        }
+      }
+
+      // 4. Vzhled a chování webu
+      item {
+        SettingsSectionHeader("Vzhled a chování stránek")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          SettingsToggle(
+            title = "Vynutit tmavý režim webů",
+            subtitle = "Invertuje světlé weby do šetrného tmavého vzhledu",
+            checked = settingsManager.forceWebDarkMode.value,
+            onCheckedChange = {
+              settingsManager.setForceWebDarkMode(it)
+              tabManager.applySettingsToWebViews()
+            }
+          )
+          Divider(color = BrowsyBorder)
+          SettingsToggle(
+            title = "Povolit JavaScript",
+            subtitle = "Vypnutí zrychlí načítání, ale může omezit funkce",
+            checked = settingsManager.javaScriptEnabled.value,
+            onCheckedChange = {
+              settingsManager.setJavaScriptEnabled(it)
+              tabManager.applySettingsToWebViews()
+            }
+          )
+          Divider(color = BrowsyBorder)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { onOpenExpander() }
+              .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column {
+              Text("Zkratky textu (Text Expander)", color = BrowsyTextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+              Text("Spravovat zkratky automatického nahrazování textu", color = BrowsyTextMuted, fontSize = 12.sp)
+            }
+            Icon(Icons.Default.ArrowForward, contentDescription = "Přejít", tint = BrowsyTextMuted, modifier = Modifier.size(18.dp))
+          }
+        }
+      }
+
+      // 5. Data procházení a mezipaměť
+      item {
+        SettingsSectionHeader("Data procházení a mezipaměť")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          SettingsToggle(
+            title = "Vymazat data při ukončení",
+            subtitle = "Automaticky promaže mezipaměť a cookies při opuštění prohlížeče",
+            checked = settingsManager.clearDataOnExit.value,
+            onCheckedChange = { settingsManager.setClearDataOnExit(it) }
+          )
+          Divider(color = BrowsyBorder)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clip(RoundedCornerShape(8.dp))
+              .background(Color(0xFF271515))
+              .border(1.dp, Color(0xFF7F1D1D), RoundedCornerShape(8.dp))
+              .clickable { showClearConfirmDialog = true }
+              .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.Delete, contentDescription = "Smazat", tint = BrowsyDanger, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Vymazat mezipaměť a cookies", color = BrowsyDanger, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+          }
+        }
+      }
+
+      // 6. O aplikaci
+      item {
+        SettingsSectionHeader("O aplikaci")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+            .padding(14.dp)
+        ) {
+          Text("Browsy pro Android", color = BrowsyTextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+          Text("Verze 1.0.0 (Chromium-grade privacy)", color = BrowsyTextMuted, fontSize = 12.sp)
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            "Monochromatický prohlížeč navržený pro nulový vizuální šum, maximální rychlost a nekompromisní soukromí.",
+            color = BrowsyTextSecondary,
+            fontSize = 12.sp
+          )
+        }
+      }
+    }
+  }
+
+  if (showClearConfirmDialog) {
+    AlertDialog(
+      onDismissRequest = { showClearConfirmDialog = false },
+      containerColor = BrowsyCard,
+      title = { Text("Vymazat data procházení?", color = BrowsyTextPrimary) },
+      text = { Text("Tato akce trvale odstraní mezipaměť, uložené cookies a data webů.", color = BrowsyTextSecondary) },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showClearConfirmDialog = false
+            settingsManager.clearAllBrowsingData {
+              Toast.makeText(context, "Data prohlížení byla vymazána", Toast.LENGTH_SHORT).show()
+            }
+          }
+        ) {
+          Text("Vymazat", color = BrowsyDanger, fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showClearConfirmDialog = false }) {
+          Text("Zrušit", color = BrowsyTextSecondary)
+        }
+      }
+    )
   }
 }
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+  Text(
+    text = title.uppercase(),
+    color = BrowsyTextMuted,
+    fontSize = 11.sp,
+    fontWeight = FontWeight.Bold,
+    letterSpacing = 0.5.sp
+  )
+}
+
+@Composable
+private fun SettingsToggle(
+  title: String,
+  subtitle: String,
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+  ) {
+    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+      Text(title, color = BrowsyTextPrimary, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+      Text(subtitle, color = BrowsyTextMuted, fontSize = 12.sp)
+    }
+    Switch(
+      checked = checked,
+      onCheckedChange = onCheckedChange,
+      colors = SwitchDefaults.colors(
+        checkedThumbColor = BrowsyAccent,
+        checkedTrackColor = Color(0xFF27272A),
+        uncheckedTrackColor = BrowsySurface
+      )
+    )
+  }
+}
+
+// -------------------------------------------------------------
+// Overflow Menu Sheet View
+// -------------------------------------------------------------
 
 @Composable
 fun MenuSheetView(
@@ -859,6 +1354,7 @@ fun MenuSheetView(
   onOpenBookmarks: () -> Unit,
   onOpenHistory: () -> Unit,
   onOpenExpander: () -> Unit,
+  onOpenSettings: () -> Unit,
   onClose: () -> Unit
 ) {
   val isBookmarked = historyAndBookmarksManager.isBookmarked(activeTab?.url ?: "")
@@ -872,7 +1368,7 @@ fun MenuSheetView(
       icon = Icons.Default.Add,
       title = "Nová záložka",
       onClick = {
-        tabManager.createTab("https://duckduckgo.com", isIncognito = false)
+        tabManager.createTab(isIncognito = false)
         onClose()
       }
     )
@@ -880,7 +1376,7 @@ fun MenuSheetView(
       icon = Icons.Default.Security,
       title = "Nová anonymní záložka",
       onClick = {
-        tabManager.createTab("https://duckduckgo.com", isIncognito = true)
+        tabManager.createTab(isIncognito = true)
         onClose()
       }
     )
@@ -921,6 +1417,11 @@ fun MenuSheetView(
       }
     )
     MenuItem(
+      icon = Icons.Default.Settings,
+      title = "Nastavení",
+      onClick = onOpenSettings
+    )
+    MenuItem(
       icon = Icons.Default.Delete,
       title = "Vymazat historii prohlížení",
       textColor = BrowsyDanger,
@@ -951,6 +1452,10 @@ fun MenuItem(
     Text(text = title, color = textColor, fontSize = 15.sp, fontWeight = FontWeight.Medium)
   }
 }
+
+// -------------------------------------------------------------
+// Bookmarks Sheet View
+// -------------------------------------------------------------
 
 @Composable
 fun BookmarksSheetView(
@@ -1012,6 +1517,10 @@ fun BookmarksSheetView(
     }
   }
 }
+
+// -------------------------------------------------------------
+// History Sheet View
+// -------------------------------------------------------------
 
 @Composable
 fun HistorySheetView(
@@ -1086,6 +1595,10 @@ fun HistorySheetView(
   }
 }
 
+// -------------------------------------------------------------
+// Text Expander Snippets Sheet View
+// -------------------------------------------------------------
+
 @Composable
 fun TextExpanderSheetView(
   textExpanderManager: TextExpanderManager,
@@ -1116,7 +1629,6 @@ fun TextExpanderSheetView(
 
     Spacer(modifier = Modifier.height(14.dp))
 
-    // Input form to add a new snippet
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
@@ -1177,7 +1689,6 @@ fun TextExpanderSheetView(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // List of Snippets
     LazyColumn(modifier = Modifier.height(280.dp)) {
       items(snippets) { item ->
         Row(
