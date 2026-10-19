@@ -174,5 +174,23 @@ if (!tabManagerSource.includes('this.notifyActiveTabChanged(tabRecord)')) {
 }
 console.log('Extension Store Integration: PASS');
 
+console.log('--- TEST 11: Verify Android Package & Architecture ---');
+const androidApk = path.join(__dirname, '../release/Browsy-android/Browsy.apk');
+if (!fs.existsSync(androidApk)) {
+  console.error('FAIL: release/Browsy-android/Browsy.apk does not exist');
+  process.exit(1);
+}
+const apkStats = fs.statSync(androidApk);
+if (apkStats.size < 1000000) {
+  console.error('FAIL: release/Browsy-android/Browsy.apk is abnormally small (' + apkStats.size + ' bytes)');
+  process.exit(1);
+}
+const androidManifest = fs.readFileSync(path.join(__dirname, '../android/app/src/main/AndroidManifest.xml'), 'utf-8');
+if (!androidManifest.includes('android.permission.INTERNET') || !androidManifest.includes('android.intent.category.BROWSABLE')) {
+  console.error('FAIL: AndroidManifest.xml missing INTERNET or BROWSABLE intent filter');
+  process.exit(1);
+}
+console.log('Android Package & Architecture: PASS (' + (apkStats.size / (1024 * 1024)).toFixed(2) + ' MB)');
+
 console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
 

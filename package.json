@@ -8,8 +8,11 @@
     "build:ui": "vite build",
     "build:native": "cargo build --release --manifest-path src-native/Cargo.toml && node scripts/copy-native.js",
     "build": "npm run build:native && npm run build:ui",
+    "build:android": "cd android && .\\gradlew assembleDebug",
     "package:exe": "npm run build:ui && node scripts/package-exe.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "package:apk": "cd android && .\\gradlew assembleDebug && node ../scripts/package-apk.js",
+    "test:android": "cd android && .\\gradlew test",
+    "test": "node tests/verify-launch.js"
   },
   "keywords": [],
   "type": "commonjs",
