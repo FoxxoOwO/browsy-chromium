@@ -220,6 +220,8 @@ document.addEventListener('play', (e) => {
 // -------------------------------------------------------------
 // 3. Web Extension Store Integrations (Chrome, Opera, Firefox)
 // -------------------------------------------------------------
+let currentStoreKey = null;
+
 function setupStoreIntegration() {
   const href = window.location.href;
 
@@ -227,8 +229,12 @@ function setupStoreIntegration() {
   const chromeMatch = href.match(/(?:chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\/(?:[^\/]+\/)?([a-p]{32})/i);
   if (chromeMatch) {
     const extId = chromeMatch[1].toLowerCase();
-    setupChromeStore(extId);
-    injectStoreFloatingBar('chrome', extId, 'Chrome Web Store');
+    const key = `chrome:${extId}`;
+    if (currentStoreKey !== key) {
+      currentStoreKey = key;
+      setupChromeStore(extId);
+      injectStoreFloatingBar('chrome', extId, 'Chrome Web Store');
+    }
     return;
   }
 
@@ -236,8 +242,12 @@ function setupStoreIntegration() {
   const operaMatch = href.match(/addons\.opera\.com\/(?:[a-zA-Z-]+\/)?extensions\/details\/([a-zA-Z0-9_-]+)/i);
   if (operaMatch) {
     const slug = operaMatch[1];
-    setupOperaStore(slug);
-    injectStoreFloatingBar('opera', slug, 'Opera Add-ons');
+    const key = `opera:${slug}`;
+    if (currentStoreKey !== key) {
+      currentStoreKey = key;
+      setupOperaStore(slug);
+      injectStoreFloatingBar('opera', slug, 'Opera Add-ons');
+    }
     return;
   }
 
@@ -245,26 +255,91 @@ function setupStoreIntegration() {
   const firefoxMatch = href.match(/addons\.mozilla\.org\/(?:[a-zA-Z-]+\/)?firefox\/addon\/([a-zA-Z0-9_-]+)/i);
   if (firefoxMatch) {
     const slug = firefoxMatch[1];
-    setupAmoStore(slug);
-    injectStoreFloatingBar('firefox', slug, 'Firefox Add-ons');
+    const key = `firefox:${slug}`;
+    if (currentStoreKey !== key) {
+      currentStoreKey = key;
+      setupAmoStore(slug);
+      injectStoreFloatingBar('firefox', slug, 'Firefox Add-ons');
+    }
     return;
   }
+
+  // If not on an extension detail page, remove any stale floating installer
+  currentStoreKey = null;
+  const existingBanner = document.getElementById('browsy-store-banner');
+  if (existingBanner) existingBanner.remove();
 }
 
 // -------------------------------------------------------------
 // Chrome Web Store Enhancer
 // -------------------------------------------------------------
 function setupChromeStore(extId) {
-  // Inject style to suppress "Install Google Chrome" nag banners
-  const style = document.createElement('style');
-  style.textContent = `
-    [aria-label*="Google Chrome"][role="region"],
-    .F9iHWe,
-    div:has(> a[href*="google.com/chrome"]) {
-      display: none !important;
-    }
-  `;
-  document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+  // Inject style to suppress "Install Google Chrome" nag banners & style enhanced buttons
+  let style = document.getElementById('browsy-cws-injected-style');
+  if (!style) {
+    style = document.createElement('style');
+    style.id = 'browsy-cws-injected-style';
+    style.textContent = `
+      [aria-label*="Google Chrome"][role="region"],
+      .F9iHWe,
+      div:has(> a[href*="google.com/chrome"]) {
+        display: none !important;
+      }
+      .browsy-cws-action-btn {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        height: 40px !important;
+        min-height: 40px !important;
+        padding: 0 24px !important;
+        border-radius: 20px !important;
+        background: #09090b !important;
+        background-color: #09090b !important;
+        color: #f4f4f5 !important;
+        border: 1px solid #3f3f46 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Google Sans", sans-serif !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        pointer-events: auto !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4) !important;
+        transition: all 0.15s ease !important;
+        user-select: none !important;
+        line-height: normal !important;
+        margin: 4px !important;
+        z-index: 99 !important;
+      }
+      .browsy-cws-action-btn:hover {
+        background: #18181b !important;
+        background-color: #18181b !important;
+        border-color: #71717a !important;
+        color: #ffffff !important;
+      }
+      .browsy-cws-action-btn:active {
+        background: #27272a !important;
+      }
+      .browsy-cws-btn,
+      button.browsy-cws-btn,
+      [role="button"].browsy-cws-btn {
+        pointer-events: auto !important;
+        cursor: pointer !important;
+        opacity: 1 !important;
+        background: #09090b !important;
+        background-color: #09090b !important;
+        color: #f4f4f5 !important;
+        border: 1px solid #3f3f46 !important;
+        border-radius: 20px !important;
+      }
+      .browsy-cws-btn .UywwFc-RLmnJb {
+        background: #09090b !important;
+      }
+      .browsy-cws-btn .UywwFc-vQzf8d,
+      .browsy-cws-btn span[jsname="V67aGc"] {
+        color: #f4f4f5 !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
 
   const enhanceButtons = () => {
     // Hide nag messages in DOM
@@ -278,38 +353,108 @@ function setupChromeStore(extId) {
       }
     });
 
-    // Find CWS Action Button (Add to Chrome / Available on Chrome / etc.)
-    const buttons = document.querySelectorAll('button');
-    buttons.forEach(btn => {
-      const txt = (btn.textContent || '').trim().toLowerCase();
+    function inspectElement(el) {
+      if (!el) return;
+
+      const txt = (el.textContent || '').trim().toLowerCase();
+      const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+      const title = (el.getAttribute('title') || '').trim().toLowerCase();
+
       const isTarget = txt.includes('přidat do chromu') || txt.includes('add to chrome') ||
+                       txt.includes('pridať do chromu') || txt.includes('zu chrome hinzufügen') ||
+                       txt.includes('añadir a chrome') || txt.includes('agregar a chrome') ||
+                       txt.includes('dodaj do chrome') || txt.includes('ajouter à chrome') ||
                        txt.includes('k dispozici v chromu') || txt.includes('available on chrome') ||
-                       txt.includes('přidat do prohlížeče');
+                       txt.includes('přidat do prohlížeče') || txt.includes('add to browser') ||
+                       aria.includes('přidat do chromu') || aria.includes('add to chrome') ||
+                       aria.includes('pridať do chromu') || aria.includes('k dispozici v chromu') ||
+                       title.includes('přidat do chromu') || title.includes('add to chrome');
 
-      if (isTarget && !btn.dataset.browsyEnhanced) {
-        btn.dataset.browsyEnhanced = 'true';
-        btn.disabled = false;
-        btn.removeAttribute('aria-disabled');
+      if (!isTarget) return;
 
-        const span = btn.querySelector('span[jsname="V67aGc"]') || btn.querySelector('span') || btn;
-        span.textContent = '＋ Přidat do Browsy';
-        btn.classList.add('browsy-cws-btn');
-        btn.style.cursor = 'pointer';
-        btn.style.opacity = '1';
+      let btn = el;
+      if (btn.tagName !== 'BUTTON' && btn.getAttribute('role') !== 'button') {
+        const closestBtn = btn.closest('button, [role="button"]');
+        if (closestBtn) btn = closestBtn;
+      }
 
-        btn.addEventListener('click', (e) => {
+      // Check if our custom high-contrast in-page button is already attached
+      const hostWrapper = btn.closest('.VfPpkd-dgl2Hf-ppHlrf-sM5MNb') || btn;
+      let directBtn = document.getElementById('browsy-inpage-cws-btn');
+      if (!directBtn || !document.contains(directBtn)) {
+        if (directBtn) directBtn.remove();
+        directBtn = document.createElement('button');
+        directBtn.id = 'browsy-inpage-cws-btn';
+        directBtn.className = 'browsy-cws-action-btn';
+        directBtn.setAttribute('type', 'button');
+        directBtn.innerHTML = `
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px; display:inline-block; vertical-align:text-bottom;">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span class="browsy-btn-text">Přidat do Browsy</span>
+        `;
+        const onInstall = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          span.textContent = 'Instaluji do Browsy...';
+          e.stopImmediatePropagation();
+          directBtn.disabled = true;
+          directBtn.style.opacity = '0.75';
+          const label = directBtn.querySelector('.browsy-btn-text') || directBtn;
+          label.textContent = 'Instaluji do Browsy...';
           installExtension('chrome', extId, document.title);
-        }, true);
+        };
+        directBtn.onclick = onInstall;
+        directBtn.addEventListener('click', onInstall, true);
+
+        if (hostWrapper.parentElement) {
+          hostWrapper.parentElement.insertBefore(directBtn, hostWrapper);
+        } else {
+          hostWrapper.before(directBtn);
+        }
       }
-    });
+
+      // Hide Google's native disabled button
+      btn.style.setProperty('display', 'none', 'important');
+      if (hostWrapper !== btn) {
+        hostWrapper.style.setProperty('display', 'none', 'important');
+      }
+
+      // Fallback: unlock native button too
+      btn.removeAttribute('disabled');
+      btn.disabled = false;
+      btn.removeAttribute('aria-disabled');
+      btn.classList.remove('disabled');
+      btn.classList.add('browsy-cws-btn');
+      btn.style.setProperty('pointer-events', 'auto', 'important');
+      btn.style.setProperty('cursor', 'pointer', 'important');
+    }
+
+    function searchTree(root) {
+      if (!root) return;
+      const candidates = root.querySelectorAll('button, [role="button"], a, div[jsaction], div[jsname], div[tabindex="0"], c-wiz');
+      candidates.forEach(inspectElement);
+
+      const all = root.querySelectorAll('*');
+      all.forEach(node => {
+        if (node.shadowRoot) {
+          searchTree(node.shadowRoot);
+        }
+      });
+    }
+
+    searchTree(document);
   };
 
   enhanceButtons();
-  const obs = new MutationObserver(debounce(enhanceButtons, 250));
+  const obs = new MutationObserver(debounce(enhanceButtons, 150));
   obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+
+  let checks = 0;
+  const interval = setInterval(() => {
+    enhanceButtons();
+    if (++checks > 20) clearInterval(interval);
+  }, 400);
 }
 
 // -------------------------------------------------------------
@@ -476,10 +621,21 @@ function setupAmoStore(slug) {
 // Floating Quick Action Banner
 // -------------------------------------------------------------
 function injectStoreFloatingBar(store, id, storeName) {
-  if (document.getElementById('browsy-store-banner')) return;
+  const existing = document.getElementById('browsy-store-banner');
+  if (existing) {
+    if (existing.dataset.storeKey === `${store}:${id}`) return;
+    existing.remove();
+  }
+
+  const host = document.body || document.documentElement;
+  if (!host) {
+    window.addEventListener('DOMContentLoaded', () => injectStoreFloatingBar(store, id, storeName), { once: true });
+    return;
+  }
 
   const banner = document.createElement('div');
   banner.id = 'browsy-store-banner';
+  banner.dataset.storeKey = `${store}:${id}`;
   banner.style.cssText = `
     position: fixed;
     bottom: 24px;
@@ -538,7 +694,7 @@ function injectStoreFloatingBar(store, id, storeName) {
     ">&times;</button>
   `;
 
-  document.body.appendChild(banner);
+  host.appendChild(banner);
 
   document.getElementById('browsy-btn-store-dismiss').onclick = () => banner.remove();
   document.getElementById('browsy-btn-store-install').onclick = () => installExtension(store, id, document.title);
@@ -549,6 +705,13 @@ function injectStoreFloatingBar(store, id, storeName) {
 // -------------------------------------------------------------
 async function installExtension(store, id, title) {
   // Update all in-page and floating buttons to installing state
+  const inpageCws = document.getElementById('browsy-inpage-cws-btn');
+  if (inpageCws) {
+    inpageCws.disabled = true;
+    inpageCws.style.opacity = '0.7';
+    const label = inpageCws.querySelector('.browsy-btn-text') || inpageCws;
+    label.textContent = 'Instaluji do Browsy...';
+  }
   const floatingBtn = document.getElementById('browsy-btn-store-install');
   if (floatingBtn) {
     floatingBtn.textContent = 'Instaluji...';
@@ -572,6 +735,12 @@ async function installExtension(store, id, title) {
   try {
     const res = await ipcRenderer.invoke('extensions:install-from-store', store, id, title);
     if (res.success) {
+      if (inpageCws) {
+        const label = inpageCws.querySelector('.browsy-btn-text') || inpageCws;
+        label.textContent = '✔ Nainstalováno v Browsy';
+        inpageCws.style.background = '#27272a';
+        inpageCws.style.borderColor = '#52525b';
+      }
       if (floatingBtn) floatingBtn.textContent = '✔ Nainstalováno!';
       if (amoBtn) {
         amoBtn.textContent = '✔ Úspěšně nainstalováno!';
@@ -603,6 +772,13 @@ async function installExtension(store, id, title) {
 }
 
 function resetButtonStates() {
+  const inpageCws = document.getElementById('browsy-inpage-cws-btn');
+  if (inpageCws) {
+    inpageCws.disabled = false;
+    inpageCws.style.opacity = '1';
+    const label = inpageCws.querySelector('.browsy-btn-text') || inpageCws;
+    label.textContent = 'Přidat do Browsy';
+  }
   const floatingBtn = document.getElementById('browsy-btn-store-install');
   if (floatingBtn) { floatingBtn.textContent = 'Přidat do Browsy'; floatingBtn.disabled = false; }
   const amoBtn = document.getElementById('browsy-amo-btn');
@@ -611,6 +787,7 @@ function resetButtonStates() {
   if (operaBtn) {
     const span = operaBtn.querySelector('span') || operaBtn;
     span.textContent = '＋ Přidat do Browsy';
+    operaBtn.disabled = false;
   }
   const cwsBtn = document.querySelector('.browsy-cws-btn');
   if (cwsBtn) {
@@ -620,6 +797,26 @@ function resetButtonStates() {
 }
 
 window.addEventListener('DOMContentLoaded', setupStoreIntegration);
+
+// Hook History API & Polling for SPAs (Chrome Web Store, Opera, AMO)
+function hookSpaStoreIntegration() {
+  const origPush = history.pushState;
+  history.pushState = function(...args) {
+    const res = origPush.apply(this, args);
+    setTimeout(setupStoreIntegration, 50);
+    return res;
+  };
+  const origReplace = history.replaceState;
+  history.replaceState = function(...args) {
+    const res = origReplace.apply(this, args);
+    setTimeout(setupStoreIntegration, 50);
+    return res;
+  };
+  window.addEventListener('popstate', () => setTimeout(setupStoreIntegration, 50));
+  window.addEventListener('hashchange', () => setTimeout(setupStoreIntegration, 50));
+  setInterval(setupStoreIntegration, 600);
+}
+hookSpaStoreIntegration();
 
 // -------------------------------------------------------------
 // 4. Browsy Shields: Cosmetic Filter Engine & Element Picker / Zapper

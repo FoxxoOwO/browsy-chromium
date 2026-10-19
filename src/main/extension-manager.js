@@ -254,17 +254,39 @@ class ExtensionManager {
     if (store === 'chrome') {
       const match = idOrSlug.match(/[a-p]{32}/i);
       const extId = match ? match[0].toLowerCase() : idOrSlug.toLowerCase();
-      const downloadUrl = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D${extId}%26uc`;
-      const res = await fetch(downloadUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+      const candidateUrls = [
+        `https://clients2.google.com/service/update2/crx?response=redirect&prod=chromecrx&prodversion=141.0.7390.55&acceptformat=crx3&x=id%3D${extId}%26installsource%3Dondemand%26uc`,
+        `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130.0&acceptformat=crx2,crx3&x=id%3D${extId}%26uc`,
+        `https://clients2.google.com/service/update2/crx?response=redirect&prod=chromecrx&prodversion=132.0&acceptformat=crx3&x=id%3D${extId}%26installsource%3Dondemand%26uc`
+      ];
+
+      let lastStatus = 0;
+      let lastError = null;
+
+      for (const downloadUrl of candidateUrls) {
+        try {
+          const res = await fetch(downloadUrl, {
+            redirect: 'follow',
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            }
+          });
+          lastStatus = res.status;
+          if (res.ok && res.status === 200) {
+            const buffer = Buffer.from(await res.arrayBuffer());
+            if (buffer.length > 200) {
+              return await this.installFromBuffer(buffer, `${extId}.crx`, 'chrome');
+            }
+          }
+        } catch (err) {
+          lastError = err;
         }
-      });
-      if (!res.ok) {
-        throw new Error(`Chrome Web Store vrátil chybu HTTP ${res.status}`);
       }
-      const buffer = Buffer.from(await res.arrayBuffer());
-      return await this.installFromBuffer(buffer, `${extId}.crx`, 'chrome');
+
+      if (lastStatus === 204) {
+        throw new Error('Doplněk nebyl na serveru Google nalezen nebo není dostupný pro veřejné stažení (HTTP 204).');
+      }
+      throw new Error(lastError ? lastError.message : `Chyba při stahování z Chrome Web Store (HTTP ${lastStatus || 'neznámá'}).`);
     }
 
     if (store === 'opera') {

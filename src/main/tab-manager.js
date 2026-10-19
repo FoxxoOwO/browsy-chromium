@@ -144,14 +144,13 @@ class TabManager {
       tabRecord.url = view.webContents.getURL() || tabRecord.url;
       tabRecord.storeInfo = extensionManager.detectStoreUrl(tabRecord.url);
       this.notifyTabUpdated(tabRecord);
+      if (this.activeTabId === tabId) {
+        this.notifyActiveTabChanged(tabRecord);
+      }
     };
     view.webContents.on('did-navigate-in-page', syncNavigationState);
     view.webContents.on('did-navigate', () => {
       syncNavigationState();
-      // New top-level page committed: refresh the per-page counters in the UI
-      if (this.activeTabId === tabId) {
-        this.notifyActiveTabChanged(tabRecord);
-      }
     });
 
     // Per-page counters (like Chrome/Brave): drop blocker stats, popups and detected media

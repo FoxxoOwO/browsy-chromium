@@ -156,4 +156,23 @@ if (!preloadSource.includes('captureActivePage: () =>') || !mainSource.includes(
 }
 console.log('Overlay Snapshot APIs: PASS');
 
+console.log('--- TEST 10: Verify Extension Store Buttons & SPA Support ---');
+const contentPreload = fs.readFileSync(path.join(__dirname, '../content-preload.js'), 'utf-8');
+if (!contentPreload.includes('browsy-inpage-cws-btn') || !contentPreload.includes('hookSpaStoreIntegration') || !contentPreload.includes('injectStoreFloatingBar')) {
+  console.error('FAIL: content-preload.js missing CWS in-page button or SPA navigation hooks');
+  process.exit(1);
+}
+const extManagerSource = fs.readFileSync(path.join(__dirname, '../src/main/extension-manager.js'), 'utf-8');
+if (!extManagerSource.includes('installsource%3Dondemand') || !extManagerSource.includes('candidateUrls')) {
+  console.error('FAIL: extension-manager.js missing robust multi-endpoint CRX download logic');
+  process.exit(1);
+}
+const tabManagerSource = fs.readFileSync(path.join(__dirname, '../src/main/tab-manager.js'), 'utf-8');
+if (!tabManagerSource.includes('this.notifyActiveTabChanged(tabRecord)')) {
+  console.error('FAIL: tab-manager.js missing notifyActiveTabChanged on navigation sync');
+  process.exit(1);
+}
+console.log('Extension Store Integration: PASS');
+
 console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
+
