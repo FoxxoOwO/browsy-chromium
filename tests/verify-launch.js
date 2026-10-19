@@ -132,4 +132,17 @@ if (fsCheck.existsSync(settingsManager.settingsPath + '.tmp')) {
 }
 console.log('Settings flush: PASS');
 
+console.log('--- TEST 8: Verify Frameless Window & Titlebar Styling ---');
+const mainSource = fs.readFileSync(path.join(__dirname, '../main.js'), 'utf-8');
+if (!mainSource.includes("windowOptions.titleBarStyle = 'hidden'") || !mainSource.includes('titleBarOverlay')) {
+  console.error('FAIL: main.js does not configure titleBarStyle: hidden or titleBarOverlay');
+  process.exit(1);
+}
+const cssSource = fs.readFileSync(path.join(__dirname, '../src/ui/style.css'), 'utf-8');
+if (!cssSource.includes('-webkit-app-region: drag') || !cssSource.includes('padding: 4px 140px 0 8px')) {
+  console.error('FAIL: src/ui/style.css missing drag region or titleBarOverlay padding');
+  process.exit(1);
+}
+console.log('Frameless Titlebar & Overlay: PASS');
+
 console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');

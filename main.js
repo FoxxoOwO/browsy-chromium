@@ -38,20 +38,36 @@ app.on('before-quit', () => {
 });
 
 async function createWindow() {
-  mainWindow = new BrowserWindow({
+  const initialLayout = settingsManager.get('tabLayout', 'horizontal');
+  const isVertical = initialLayout === 'vertical';
+
+  const windowOptions = {
     width: 1360,
     height: 860,
     minWidth: 800,
     minHeight: 500,
     title: 'Browsy Chromium',
-    backgroundColor: '#121216',
+    backgroundColor: isVertical ? '#121216' : '#09090b',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
     }
-  });
+  };
+
+  if (process.platform === 'win32') {
+    windowOptions.titleBarStyle = 'hidden';
+    windowOptions.titleBarOverlay = {
+      color: isVertical ? '#121216' : '#09090b',
+      symbolColor: '#a1a1aa',
+      height: isVertical ? 44 : 38
+    };
+  } else if (process.platform === 'darwin') {
+    windowOptions.titleBarStyle = 'hiddenInset';
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
 
   // Remove native default menu for sleek browser UI
   mainWindow.setMenuBarVisibility(false);
@@ -177,6 +193,18 @@ function setupIPC() {
   ipcMain.handle('layout:set-mode', (e, mode) => {
     settingsManager.set('tabLayout', mode);
     if (mainWindow && !mainWindow.isDestroyed()) {
+      if (process.platform === 'win32' && typeof mainWindow.setTitleBarOverlay === 'function') {
+        try {
+          const isVert = mode === 'vertical';
+          mainWindow.setTitleBarOverlay({
+            color: isVert ? '#121216' : '#09090b',
+            symbolColor: '#a1a1aa',
+            height: isVert ? 44 : 38
+          });
+        } catch (err) {
+          console.warn('setTitleBarOverlay error:', err);
+        }
+      }
       mainWindow.webContents.send('browsy:layout-changed', mode);
     }
     return mode;

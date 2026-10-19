@@ -61,14 +61,37 @@ body {
   display: flex;
   align-items: center;
   height: var(--tab-height);
-  padding: 4px 8px 0 8px;
+  padding: 4px 140px 0 8px; /* Room for Windows Window Controls Overlay */
   background-color: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   gap: 4px;
+  -webkit-app-region: drag;
 }
 
-body.layout-vertical #horizontal-tab-bar {
+body.layout-vertical #horizontal-tab-bar,
+.layout-vertical #horizontal-tab-bar {
   display: none !important;
+}
+
+/* Ensure interactive elements inside draggable titlebar are not dragging */
+button,
+input,
+select,
+textarea,
+a,
+.tab,
+.workspace-pill,
+.new-tab-btn,
+.nav-btn,
+.action-btn,
+.badge-btn,
+.lock-btn,
+.omnibox-lock-btn,
+.popover,
+.modal-overlay,
+.modal-content,
+.context-menu {
+  -webkit-app-region: no-drag;
 }
 
 .tabs-scroll-area {
@@ -79,6 +102,7 @@ body.layout-vertical #horizontal-tab-bar {
   overflow-y: hidden;
   flex: 1;
   scrollbar-width: none;
+  -webkit-app-region: drag;
 }
 .tabs-scroll-area::-webkit-scrollbar {
   display: none;
@@ -101,6 +125,7 @@ body.layout-vertical #horizontal-tab-bar {
   position: relative;
   border: 1px solid transparent;
   border-bottom: none;
+  -webkit-app-region: no-drag;
 }
 
 .tab:hover {
@@ -380,6 +405,21 @@ body.layout-vertical #horizontal-tab-bar {
 .layout-vertical #vertical-sidebar,
 body.layout-vertical #vertical-sidebar {
   display: flex !important;
+}
+
+.layout-vertical #nav-bar,
+body.layout-vertical #nav-bar {
+  padding-right: 144px;
+  -webkit-app-region: drag;
+}
+
+.layout-vertical #nav-bar .nav-group,
+.layout-vertical #nav-bar #omnibox-container,
+.layout-vertical #nav-bar .action-tools,
+body.layout-vertical #nav-bar .nav-group,
+body.layout-vertical #nav-bar #omnibox-container,
+body.layout-vertical #nav-bar .action-tools {
+  -webkit-app-region: no-drag;
 }
 
 #vertical-sidebar.collapsed {
