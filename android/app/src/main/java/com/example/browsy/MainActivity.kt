@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import com.example.browsy.data.HistoryAndBookmarksManager
 import com.example.browsy.data.SettingsManager
 import com.example.browsy.expander.TextExpanderManager
+import com.example.browsy.sync.SyncManager
 import com.example.browsy.tabs.TabManager
 import com.example.browsy.theme.BrowsyBackground
 import com.example.browsy.theme.BrowsyTheme
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
   private lateinit var settingsManager: SettingsManager
   private lateinit var historyAndBookmarksManager: HistoryAndBookmarksManager
   private lateinit var textExpanderManager: TextExpanderManager
+  private lateinit var syncManager: SyncManager
   private lateinit var tabManager: TabManager
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +32,7 @@ class MainActivity : ComponentActivity() {
     settingsManager = SettingsManager(this)
     historyAndBookmarksManager = HistoryAndBookmarksManager(this)
     textExpanderManager = TextExpanderManager(this)
+    syncManager = SyncManager(this, historyAndBookmarksManager, settingsManager, textExpanderManager)
     tabManager = TabManager(this, historyAndBookmarksManager, textExpanderManager, settingsManager)
 
     handleIncomingIntent(intent)
@@ -47,7 +50,8 @@ class MainActivity : ComponentActivity() {
             tabManager = tabManager,
             historyAndBookmarksManager = historyAndBookmarksManager,
             textExpanderManager = textExpanderManager,
-            settingsManager = settingsManager
+            settingsManager = settingsManager,
+            syncManager = syncManager
           )
         }
       }

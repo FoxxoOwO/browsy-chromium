@@ -12,6 +12,7 @@ const siteInfoManager = require('./src/main/site-info-manager');
 const TabManager = require('./src/main/tab-manager');
 const profileSync = require('./src/main/profile-sync');
 const passwordVault = require('./src/main/password-vault');
+const syncClient = require('./src/main/sync-client');
 
 let mainWindow = null;
 let tabManager = null;
@@ -416,6 +417,20 @@ function setupIPC() {
   });
   ipcMain.handle('vault:clear', () => {
     return passwordVault.clearVault();
+  });
+
+  // Cloud & Self-Hosted Zero-Knowledge Sync
+  ipcMain.handle('sync:get-config', () => {
+    return syncClient.getConfig();
+  });
+  ipcMain.handle('sync:save-config', (e, config) => {
+    return syncClient.saveConfig(config);
+  });
+  ipcMain.handle('sync:test-connection', async (e, config) => {
+    return await syncClient.testConnection(config);
+  });
+  ipcMain.handle('sync:now', async (e, config) => {
+    return await syncClient.syncNow(config);
   });
 }
 

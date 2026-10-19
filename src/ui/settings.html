@@ -417,6 +417,13 @@
       </svg>
       <span>Doplňky (Extensions)</span>
     </button>
+
+    <button class="nav-item" data-tab="sync">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+      </svg>
+      <span>Synchronizace a Cloud</span>
+    </button>
   </aside>
 
   <!-- Content -->
@@ -736,6 +743,85 @@
             </svg>
             <span style="margin-left:8px;">Firefox Add-ons (AMO)</span>
           </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Cloud & Self-Hosted Sync -->
+    <section id="section-sync" class="settings-section">
+      <div class="section-title-wrap">
+        <h1>Cloudová a Self-Hosted synchronizace</h1>
+        <p>End-to-End šifrovaná (AES-256-GCM + PBKDF2) synchronizace záložek, historie, nastavení a filtrů mezi vašimi zařízeními.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="20" height="8" x="2" y="2" rx="2" ry="2"/>
+            <rect width="20" height="8" x="2" y="14" rx="2" ry="2"/>
+            <line x1="6" x2="6.01" y1="6" y2="6"/>
+            <line x1="6" x2="6.01" y1="18" y2="18"/>
+          </svg>
+          Režim a poskytovatel synchronizace
+        </div>
+        <div class="card-desc">
+          Zvolte, zda chcete používat vlastní self-hostovaný Browsy Sync Server (v Dockeru nebo Node.js), standardní cloudové WebDAV úložiště (Nextcloud, ownCloud, pCloud), nebo synchronizaci vypnout.
+        </div>
+
+        <div class="row">
+          <div class="row-info">
+            <h4>Poskytovatel</h4>
+            <p>Typ synchronizačního backendu</p>
+          </div>
+          <select id="sync-provider-select">
+            <option value="NONE">Vypnuto (pouze lokální data)</option>
+            <option value="SELF_HOSTED">Self-Hosted Browsy Sync Server</option>
+            <option value="WEBDAV">Cloudové úložiště WebDAV (Nextcloud / ownCloud / pCloud)</option>
+          </select>
+        </div>
+
+        <div id="sync-settings-fields" style="display:none; flex-direction:column; gap:14px; margin-top:14px; border-top:1px solid var(--border-subtle); padding-top:14px;">
+          <div>
+            <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">URL adresa serveru / úložiště</label>
+            <input type="text" id="sync-server-url" placeholder="např. http://192.168.1.50:8080 nebo https://nextcloud.example.com/remote.php/dav/files/user/" style="width:100%;">
+          </div>
+
+          <div id="sync-username-wrap" style="display:none;">
+            <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;">Uživatelské jméno (pro WebDAV)</label>
+            <input type="text" id="sync-username" placeholder="např. uzivatel" style="width:100%;">
+          </div>
+
+          <div>
+            <label style="display:block; font-size:13px; font-weight:500; margin-bottom:6px;" id="sync-token-label">Přístupový token / Heslo serveru</label>
+            <input type="password" id="sync-token" placeholder="Zadejte autorizační token nebo heslo" style="width:100%; background:#09090b; border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:13px; outline:none;">
+          </div>
+
+          <div style="background:#18181b; border:1px solid #27272a; border-radius:8px; padding:12px;">
+            <label style="display:block; font-size:13px; font-weight:600; color:#f4f4f5; margin-bottom:4px;">
+              Bezpečnostní fráze (Passphrase) pro E2E šifrování
+            </label>
+            <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">
+              Data jsou na vašem zařízení zašifrována pomocí AES-256-GCM dříve, než opustí prohlížeč. Server ani cloudové úložiště nemají k datům přístup. Pro dešifrování na mobilním telefonu zadejte stejnou frázi.
+            </div>
+            <input type="password" id="sync-passphrase" placeholder="Zadejte tajnou synchronizační frázi" style="width:100%; background:#09090b; border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-size:13px; outline:none;">
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:center; margin-top:6px;">
+            <button id="btn-sync-test" class="btn">Otestovat připojení</button>
+            <button id="btn-sync-save" class="btn btn-primary">Uložit nastavení</button>
+            <button id="btn-sync-now" class="btn">Synchronizovat nyní</button>
+          </div>
+
+          <div id="sync-status-msg" style="display:none; font-size:13px; padding:10px 12px; border-radius:8px; margin-top:8px;"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Zálohování a offline export profilu</div>
+        <div class="card-desc">Manuální export a import všech dat profilu (nastavení, vlastní filtry, textové zkratky) do přenosného souboru JSON.</div>
+        <div style="display:flex; gap:12px;">
+          <button id="btn-export-profile" class="btn">Exportovat profil (.json)</button>
+          <button id="btn-import-profile" class="btn">Importovat profil (.json)</button>
         </div>
       </div>
     </section>

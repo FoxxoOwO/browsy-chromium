@@ -104,6 +104,9 @@ import com.example.browsy.data.OmniboxPosition
 import com.example.browsy.data.SearchEngine
 import com.example.browsy.data.SettingsManager
 import com.example.browsy.expander.TextExpanderManager
+import com.example.browsy.sync.SyncConfig
+import com.example.browsy.sync.SyncManager
+import com.example.browsy.sync.SyncProvider
 import com.example.browsy.tabs.TabData
 import com.example.browsy.tabs.TabManager
 import com.example.browsy.theme.BrowsyAccent
@@ -118,6 +121,9 @@ import com.example.browsy.theme.BrowsySurface
 import com.example.browsy.theme.BrowsyTextMuted
 import com.example.browsy.theme.BrowsyTextPrimary
 import com.example.browsy.theme.BrowsyTextSecondary
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -129,6 +135,7 @@ fun BrowserScreen(
   historyAndBookmarksManager: HistoryAndBookmarksManager,
   textExpanderManager: TextExpanderManager,
   settingsManager: SettingsManager,
+  syncManager: SyncManager,
   modifier: Modifier = Modifier
 ) {
   val activeTab = tabManager.activeTab
@@ -430,6 +437,7 @@ fun BrowserScreen(
       SettingsSheetView(
         settingsManager = settingsManager,
         tabManager = tabManager,
+        syncManager = syncManager,
         onOpenExpander = {
           showSettingsSheet = false
           showExpanderSheet = true
@@ -1360,11 +1368,30 @@ fun ShieldsSheetView(
 fun SettingsSheetView(
   settingsManager: SettingsManager,
   tabManager: TabManager,
+  syncManager: SyncManager,
   onOpenExpander: () -> Unit,
   onClose: () -> Unit
 ) {
   val context = LocalContext.current
+  val coroutineScope = rememberCoroutineScope()
   var showClearConfirmDialog by remember { mutableStateOf(false) }
+
+  var selectedProvider by remember { mutableStateOf(syncManager.currentProvider.value) }
+  var serverUrl by remember { mutableStateOf(syncManager.currentServerUrl.value) }
+  var token by remember { mutableStateOf(syncManager.currentToken.value) }
+  var username by remember { mutableStateOf(syncManager.currentUsername.value) }
+  var passphrase by remember { mutableStateOf(syncManager.currentPassphrase.value) }
+  var isTestingSync by remember { mutableStateOf(false) }
+  var isSyncing by remember { mutableStateOf(false) }
+  var syncStatusMessage by remember {
+    mutableStateOf(
+      if (syncManager.lastSyncTimestamp.longValue > 0) {
+        val sdf = SimpleDateFormat("dd. MM. yyyy HH:mm", Locale.getDefault())
+        "Poslední synchronizace: " + sdf.format(Date(syncManager.lastSyncTimestamp.longValue))
+      } else ""
+    )
+  }
+  var isSyncError by remember { mutableStateOf(false) }
 
   Column(
     modifier = Modifier
@@ -1576,7 +1603,278 @@ fun SettingsSheetView(
         }
       }
 
-      // 5. Data procházení a mezipaměť
+      // 5. Synchronizace dat (Self-hosted & WebDAV)
+      item {
+        SettingsSectionHeader("Synchronizace dat (E2E šifrování)")
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BrowsyCard)
+            .border(1.dp, BrowsyBorder, RoundedCornerShape(12.dp))
+            .padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(
+            text = "Zabezpečená synchronizace záložek, historie, nastavení a filtrů s počítačem přes Zero-Knowledge AES-256-GCM.",
+            fontSize = 12.sp,
+            color = BrowsyTextMuted,
+            lineHeight = 16.sp
+          )
+
+          // Provider selector
+          Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Poskytovatel synchronizace", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = BrowsyTextPrimary)
+            SyncProvider.entries.forEach { p ->
+              val isSelected = selectedProvider == p
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(if (isSelected) BrowsyCardSelected else Color(0xFF101014))
+                  .border(1.dp, if (isSelected) BrowsyAccent else BrowsyBorder, RoundedCornerShape(8.dp))
+                  .clickable { selectedProvider = p }
+                  .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(p.title, fontSize = 13.sp, color = if (isSelected) BrowsyAccent else BrowsyTextPrimary)
+                if (isSelected) {
+                  Icon(Icons.Default.Check, contentDescription = null, tint = BrowsyAccent, modifier = Modifier.size(16.dp))
+                }
+              }
+            }
+          }
+
+          if (selectedProvider != SyncProvider.NONE) {
+            // Server URL
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text("URL adresa serveru / úložiště", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = BrowsyTextPrimary)
+              BasicTextField(
+                value = serverUrl,
+                onValueChange = { serverUrl = it },
+                textStyle = TextStyle(color = BrowsyTextPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace),
+                cursorBrush = SolidColor(BrowsyAccent),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF09090B))
+                  .border(1.dp, BrowsyBorder, RoundedCornerShape(8.dp))
+                  .padding(10.dp),
+                decorationBox = { innerTextField ->
+                  if (serverUrl.isEmpty()) {
+                    Text(
+                      if (selectedProvider == SyncProvider.SELF_HOSTED) "http://192.168.1.50:8080" else "https://nextcloud.example.com/remote.php/dav/files/user/",
+                      color = BrowsyTextMuted,
+                      fontSize = 13.sp
+                    )
+                  }
+                  innerTextField()
+                }
+              )
+            }
+
+            // WebDAV username if WEBDAV
+            if (selectedProvider == SyncProvider.WEBDAV) {
+              Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Uživatelské jméno", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = BrowsyTextPrimary)
+                BasicTextField(
+                  value = username,
+                  onValueChange = { username = it },
+                  textStyle = TextStyle(color = BrowsyTextPrimary, fontSize = 13.sp),
+                  cursorBrush = SolidColor(BrowsyAccent),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF09090B))
+                    .border(1.dp, BrowsyBorder, RoundedCornerShape(8.dp))
+                    .padding(10.dp),
+                  decorationBox = { innerTextField ->
+                    if (username.isEmpty()) {
+                      Text("Uživatelské jméno WebDAV", color = BrowsyTextMuted, fontSize = 13.sp)
+                    }
+                    innerTextField()
+                  }
+                )
+              }
+            }
+
+            // Token / Password
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text(
+                if (selectedProvider == SyncProvider.SELF_HOSTED) "Přístupový token serveru (Master Token)" else "Heslo nebo App Token",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = BrowsyTextPrimary
+              )
+              BasicTextField(
+                value = token,
+                onValueChange = { token = it },
+                textStyle = TextStyle(color = BrowsyTextPrimary, fontSize = 13.sp),
+                cursorBrush = SolidColor(BrowsyAccent),
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF09090B))
+                  .border(1.dp, BrowsyBorder, RoundedCornerShape(8.dp))
+                  .padding(10.dp),
+                decorationBox = { innerTextField ->
+                  if (token.isEmpty()) {
+                    Text("Zadejte autorizační token nebo heslo", color = BrowsyTextMuted, fontSize = 13.sp)
+                  }
+                  innerTextField()
+                }
+              )
+            }
+
+            // Passphrase
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF141418))
+                .border(1.dp, Color(0xFF27272A), RoundedCornerShape(8.dp))
+                .padding(10.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Text("Bezpečnostní fráze pro E2E šifrování", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BrowsyAccent)
+              Text(
+                "Data jsou na zařízení zašifrována pomocí AES-256-GCM dříve, než opustí prohlížeč. Zadejte stejnou frázi jako na vašem PC.",
+                fontSize = 11.sp,
+                color = BrowsyTextMuted,
+                lineHeight = 15.sp
+              )
+              BasicTextField(
+                value = passphrase,
+                onValueChange = { passphrase = it },
+                textStyle = TextStyle(color = BrowsyTextPrimary, fontSize = 13.sp),
+                cursorBrush = SolidColor(BrowsyAccent),
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(6.dp))
+                  .background(Color(0xFF09090B))
+                  .border(1.dp, BrowsyBorder, RoundedCornerShape(6.dp))
+                  .padding(8.dp),
+                decorationBox = { innerTextField ->
+                  if (passphrase.isEmpty()) {
+                    Text("Zadejte tajnou synchronizační frázi", color = BrowsyTextMuted, fontSize = 12.sp)
+                  }
+                  innerTextField()
+                }
+              )
+            }
+
+            // Buttons
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              // Test button
+              Box(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF202026))
+                  .border(1.dp, BrowsyBorder, RoundedCornerShape(8.dp))
+                  .clickable(enabled = !isTestingSync && !isSyncing) {
+                    coroutineScope.launch {
+                      isTestingSync = true
+                      syncStatusMessage = "Testuji připojení..."
+                      isSyncError = false
+                      val cfg = SyncConfig(selectedProvider, serverUrl, token, username, passphrase)
+                      val res = syncManager.testConnection(cfg)
+                      isTestingSync = false
+                      if (res.success) {
+                        syncStatusMessage = "✔ ${res.message}"
+                        isSyncError = false
+                      } else {
+                        syncStatusMessage = "✖ ${res.error}"
+                        isSyncError = true
+                      }
+                    }
+                  }
+                  .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text(if (isTestingSync) "..." else "Test", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = BrowsyTextPrimary)
+              }
+
+              // Save button
+              Box(
+                modifier = Modifier
+                  .weight(1f)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF202026))
+                  .border(1.dp, BrowsyBorder, RoundedCornerShape(8.dp))
+                  .clickable(enabled = !isTestingSync && !isSyncing) {
+                    val cfg = SyncConfig(selectedProvider, serverUrl, token, username, passphrase, syncManager.lastSyncTimestamp.longValue)
+                    syncManager.saveConfig(cfg)
+                    syncStatusMessage = "✔ Nastavení uloženo"
+                    isSyncError = false
+                  }
+                  .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text("Uložit", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = BrowsyTextPrimary)
+              }
+
+              // Sync Now button
+              Box(
+                modifier = Modifier
+                  .weight(1.5f)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(BrowsyAccent)
+                  .clickable(enabled = !isTestingSync && !isSyncing) {
+                    coroutineScope.launch {
+                      isSyncing = true
+                      syncStatusMessage = "Probíhá synchronizace..."
+                      isSyncError = false
+                      val cfg = SyncConfig(selectedProvider, serverUrl, token, username, passphrase, syncManager.lastSyncTimestamp.longValue)
+                      syncManager.saveConfig(cfg)
+                      val res = syncManager.syncNow(cfg)
+                      isSyncing = false
+                      if (res.success) {
+                        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                        syncStatusMessage = "✔ Hotovo v ${sdf.format(Date())} (${res.bookmarksCount} záložek, ${res.historyCount} historie)"
+                        isSyncError = false
+                      } else {
+                        syncStatusMessage = "✖ ${res.error}"
+                        isSyncError = true
+                      }
+                    }
+                  }
+                  .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+              ) {
+                Text(if (isSyncing) "Syncing..." else "Synchronizovat", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF09090B))
+              }
+            }
+
+            // Status message
+            if (syncStatusMessage.isNotBlank()) {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(if (isSyncError) Color(0xFF271515) else Color(0xFF142718))
+                  .border(1.dp, if (isSyncError) Color(0xFF7F1D1D) else Color(0xFF166534), RoundedCornerShape(8.dp))
+                  .padding(10.dp)
+              ) {
+                Text(
+                  text = syncStatusMessage,
+                  color = if (isSyncError) BrowsyDanger else BrowsyShieldGreen,
+                  fontSize = 12.sp
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // 6. Data procházení a mezipaměť
       item {
         SettingsSectionHeader("Data procházení a mezipaměť")
         Spacer(modifier = Modifier.height(8.dp))

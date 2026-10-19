@@ -64,6 +64,15 @@ class TextExpanderManager(context: Context) {
     saveCustomSnippets()
   }
 
+  fun setCustomSnippets(list: List<Pair<String, String>>) {
+    snippets.removeAll { !it.isBuiltin }
+    for ((shortcut, expansion) in list) {
+      val cleanShortcut = if (shortcut.startsWith("/")) shortcut else "/$shortcut"
+      snippets.add(TextSnippet(cleanShortcut, expansion, false))
+    }
+    saveCustomSnippets()
+  }
+
   private fun saveCustomSnippets() {
     val custom = snippets.filter { !it.isBuiltin }
     val array = JSONArray()

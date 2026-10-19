@@ -36,7 +36,19 @@ class SettingsManager {
         { id: 'ws_work', name: 'Práce', icon: 'work', color: '#d4d4d8' },
         { id: 'ws_dev', name: 'Vývoj', icon: 'dev', color: '#a1a1aa' }
       ],
-      activeWorkspaceId: 'ws_default'
+      activeWorkspaceId: 'ws_default',
+      bookmarks: [],
+      history: [],
+      syncConfig: {
+        enabled: false,
+        provider: 'NONE', // 'NONE' | 'SELF_HOSTED' | 'WEBDAV'
+        serverUrl: '',
+        token: '',
+        username: '',
+        passphrase: '',
+        autoSync: true,
+        lastSyncTime: 0
+      }
     };
     this.saveTimer = null;
     this.dirty = false;

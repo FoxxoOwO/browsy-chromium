@@ -276,6 +276,158 @@ document.getElementById('btn-open-extensions-page')?.addEventListener('click', (
   window.location.href = 'browsy://extensions';
 });
 
+// -------------------------------------------------------------
+// Cloud & Self-Hosted Sync
+// -------------------------------------------------------------
+const providerSelect = document.getElementById('sync-provider-select');
+const syncFields = document.getElementById('sync-settings-fields');
+const serverUrlInput = document.getElementById('sync-server-url');
+const usernameWrap = document.getElementById('sync-username-wrap');
+const usernameInput = document.getElementById('sync-username');
+const tokenInput = document.getElementById('sync-token');
+const tokenLabel = document.getElementById('sync-token-label');
+const passphraseInput = document.getElementById('sync-passphrase');
+const syncStatusMsg = document.getElementById('sync-status-msg');
+
+function showSyncStatus(msg, isError = false) {
+  if (!syncStatusMsg) return;
+  syncStatusMsg.style.display = 'block';
+  syncStatusMsg.style.background = isError ? '#271515' : '#142718';
+  syncStatusMsg.style.border = `1px solid ${isError ? '#7f1d1d' : '#166534'}`;
+  syncStatusMsg.style.color = isError ? '#f87171' : '#4ade80';
+  syncStatusMsg.textContent = msg;
+}
+
+function updateSyncUI(provider) {
+  if (!syncFields) return;
+  if (provider === 'NONE') {
+    syncFields.style.display = 'none';
+  } else {
+    syncFields.style.display = 'flex';
+    if (provider === 'WEBDAV') {
+      if (usernameWrap) usernameWrap.style.display = 'block';
+      if (tokenLabel) tokenLabel.textContent = 'Heslo nebo App Token pro WebDAV';
+      if (serverUrlInput && !serverUrlInput.value) {
+        serverUrlInput.placeholder = 'https://nextcloud.example.com/remote.php/dav/files/uzivatel/';
+      }
+    } else {
+      if (usernameWrap) usernameWrap.style.display = 'none';
+      if (tokenLabel) tokenLabel.textContent = 'Přístupový token serveru (Master Token)';
+      if (serverUrlInput && !serverUrlInput.value) {
+        serverUrlInput.placeholder = 'http://192.168.1.50:8080 nebo https://sync.example.com';
+      }
+    }
+  }
+}
+
+providerSelect?.addEventListener('change', (e) => {
+  updateSyncUI(e.target.value);
+});
+
+async function loadSyncSettings() {
+  if (!api || !api.getSyncConfig) return;
+  try {
+    const config = await api.getSyncConfig();
+    if (providerSelect) providerSelect.value = config.provider || 'NONE';
+    if (serverUrlInput) serverUrlInput.value = config.serverUrl || '';
+    if (usernameInput) usernameInput.value = config.username || '';
+    if (tokenInput) tokenInput.value = config.token || '';
+    if (passphraseInput) passphraseInput.value = config.passphrase || '';
+    updateSyncUI(config.provider || 'NONE');
+
+    if (config.lastSyncTime && config.lastSyncTime > 0) {
+      const dateStr = new Date(config.lastSyncTime).toLocaleString('cs-CZ');
+      showSyncStatus(`Poslední úspěšná synchronizace: ${dateStr}`, false);
+    }
+  } catch (err) {
+    console.error('Failed to load sync settings:', err);
+  }
+}
+
+function getSyncFormConfig() {
+  const provider = providerSelect ? providerSelect.value : 'NONE';
+  return {
+    enabled: provider !== 'NONE',
+    provider,
+    serverUrl: serverUrlInput ? serverUrlInput.value.trim() : '',
+    username: usernameInput ? usernameInput.value.trim() : '',
+    token: tokenInput ? tokenInput.value.trim() : '',
+    passphrase: passphraseInput ? passphraseInput.value : '',
+    autoSync: true
+  };
+}
+
+document.getElementById('btn-sync-test')?.addEventListener('click', async () => {
+  const config = getSyncFormConfig();
+  showSyncStatus('Testuji připojení k serveru...', false);
+  try {
+    const res = await api.testSyncConnection(config);
+    if (res.success) {
+      showSyncStatus(`✔ Připojení úspěšné: ${res.message || 'Spojení navázáno'}`, false);
+    } else {
+      showSyncStatus(`✖ Chyba spojení: ${res.error || 'Neznámá chyba'}`, true);
+    }
+  } catch (err) {
+    showSyncStatus(`✖ Chyba spojení: ${err.message}`, true);
+  }
+});
+
+document.getElementById('btn-sync-save')?.addEventListener('click', async () => {
+  const config = getSyncFormConfig();
+  try {
+    await api.saveSyncConfig(config);
+    showSyncStatus('✔ Nastavení synchronizace bylo úspěšně uloženo', false);
+  } catch (err) {
+    showSyncStatus(`✖ Chyba ukládání: ${err.message}`, true);
+  }
+});
+
+document.getElementById('btn-sync-now')?.addEventListener('click', async () => {
+  const config = getSyncFormConfig();
+  if (!config.passphrase) {
+    showSyncStatus('✖ Zadejte bezpečnostní frázi (Passphrase) pro šifrování dat.', true);
+    return;
+  }
+  showSyncStatus('Probíhá E2EE synchronizace...', false);
+  try {
+    // Save config first
+    await api.saveSyncConfig(config);
+    const res = await api.syncNow(config);
+    if (res.success) {
+      const dateStr = new Date(res.lastSyncTime).toLocaleTimeString('cs-CZ');
+      showSyncStatus(`✔ Synchronizace dokončena v ${dateStr} (záložek: ${res.bookmarksCount}, historie: ${res.historyCount}, filtrů: ${res.filtersCount})`, false);
+    } else {
+      showSyncStatus(`✖ Chyba synchronizace: ${res.error}`, true);
+    }
+  } catch (err) {
+    showSyncStatus(`✖ Chyba synchronizace: ${err.message}`, true);
+  }
+});
+
+// Profile Backup / Offline Export
+document.getElementById('btn-export-profile')?.addEventListener('click', async () => {
+  try {
+    const res = await api.exportProfile();
+    if (res.success) {
+      alert(`Profil byl úspěšně exportován do:\n${res.filePath}`);
+    }
+  } catch (err) {
+    alert(`Chyba exportu profilu: ${err.message}`);
+  }
+});
+
+document.getElementById('btn-import-profile')?.addEventListener('click', async () => {
+  try {
+    const res = await api.importProfile();
+    if (res.success) {
+      alert('Profil byl úspěšně obnoven ze zálohy.');
+      window.location.reload();
+    }
+  } catch (err) {
+    alert(`Chyba importu profilu: ${err.message}`);
+  }
+});
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>'"]/g, tag => ({
@@ -301,3 +453,4 @@ document.addEventListener('click', (e) => {
 });
 
 loadAllSettings();
+loadSyncSettings();

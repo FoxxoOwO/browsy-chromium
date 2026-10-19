@@ -69,7 +69,15 @@ class HistoryAndBookmarksManager(context: Context) {
     saveBookmarks(list)
   }
 
-  private fun saveBookmarks(list: List<Bookmark>) {
+  fun setBookmarks(list: List<Bookmark>) {
+    saveBookmarks(list)
+  }
+
+  fun setHistory(list: List<HistoryItem>) {
+    saveHistory(list)
+  }
+
+  fun saveBookmarks(list: List<Bookmark>) {
     val array = JSONArray()
     for (b in list) {
       val obj = JSONObject()
@@ -121,7 +129,7 @@ class HistoryAndBookmarksManager(context: Context) {
     prefs.edit().putString("history", "[]").apply()
   }
 
-  private fun saveHistory(list: List<HistoryItem>) {
+  fun saveHistory(list: List<HistoryItem>) {
     val array = JSONArray()
     for (h in list) {
       val obj = JSONObject()

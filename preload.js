@@ -82,6 +82,12 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   exportProfile: () => ipcRenderer.invoke('profile:export'),
   importProfile: () => ipcRenderer.invoke('profile:import'),
 
+  // Cloud & Self-Hosted E2EE Sync
+  getSyncConfig: () => ipcRenderer.invoke('sync:get-config'),
+  saveSyncConfig: (config) => ipcRenderer.invoke('sync:save-config', config),
+  testSyncConnection: (config) => ipcRenderer.invoke('sync:test-connection', config),
+  syncNow: (config) => ipcRenderer.invoke('sync:now', config),
+
   // Password Vault (Encrypted Logins)
   getVaultLogins: (domain) => ipcRenderer.invoke('vault:get-logins', domain),
   addVaultLogin: (data) => ipcRenderer.invoke('vault:add-login', data),

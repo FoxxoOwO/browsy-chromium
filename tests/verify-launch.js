@@ -236,6 +236,74 @@ const testBackupPath = path.join(__dirname, 'test-profile-backup.json');
     }
     console.log('Password Vault: PASS');
 
+    console.log('--- TEST 14: Verify Self-Hosted & WebDAV Sync Integration ---');
+    const syncServer = require('../sync-server/server');
+    const syncClient = require('../src/main/sync-client');
+
+    await new Promise((resolve) => syncServer.listen(8089, '127.0.0.1', resolve));
+    console.log('Sync server listening on http://127.0.0.1:8089');
+
+    // 1. Test server health
+    const healthRes = await syncClient.request('http://127.0.0.1:8089/health');
+    if (healthRes.statusCode !== 200 || !healthRes.json || healthRes.json.service !== 'browsy-sync-server') {
+      console.error('FAIL: Sync server health check failed', healthRes);
+      process.exit(1);
+    }
+
+    // 2. Test crypto (AES-256-GCM + PBKDF2)
+    const testPayload = {
+      version: 1,
+      bookmarks: [{ title: 'Brave', url: 'https://brave.com' }],
+      history: [{ title: 'Search', url: 'https://google.com' }]
+    };
+    const passphrase = 'MySecureSyncPassphrase2026!';
+    const encryptedPkg = syncClient.encryptPayload(testPayload, passphrase);
+    if (!encryptedPkg.salt || !encryptedPkg.iv || !encryptedPkg.tag || !encryptedPkg.cipherText) {
+      console.error('FAIL: encrypted package missing fields', encryptedPkg);
+      process.exit(1);
+    }
+    const decryptedPayload = syncClient.decryptPayload(encryptedPkg, passphrase);
+    if (decryptedPayload.bookmarks[0].title !== 'Brave') {
+      console.error('FAIL: decrypted payload does not match original', decryptedPayload);
+      process.exit(1);
+    }
+
+    // 3. Test client connection check
+    const testConfig = {
+      provider: 'SELF_HOSTED',
+      serverUrl: 'http://127.0.0.1:8089',
+      token: 'test-user-token-abc',
+      passphrase: passphrase
+    };
+    const testConnRes = await syncClient.testConnection(testConfig);
+    if (!testConnRes.success) {
+      console.error('FAIL: testConnection failed', testConnRes);
+      process.exit(1);
+    }
+
+    // 4. Test client syncNow cycle
+    const syncNowRes = await syncClient.syncNow(testConfig);
+    if (!syncNowRes.success) {
+      console.error('FAIL: syncNow failed', syncNowRes);
+      process.exit(1);
+    }
+
+    // 5. Test pull from server to verify storage
+    const pullRes = await syncClient.pullRemote(testConfig);
+    if (!pullRes.exists || !pullRes.payload) {
+      console.error('FAIL: pullRemote failed to find synced payload', pullRes);
+      process.exit(1);
+    }
+    const serverDecrypted = syncClient.decryptPayload(pullRes.payload, passphrase);
+    if (!serverDecrypted.settings) {
+      console.error('FAIL: server payload missing settings', serverDecrypted);
+      process.exit(1);
+    }
+
+    // Close server
+    await new Promise((resolve) => syncServer.close(resolve));
+    console.log('Self-Hosted & WebDAV Sync Integration: PASS');
+
     console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
   } catch (err) {
     console.error('Integration test failed with error:', err);

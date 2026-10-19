@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  browsy-sync:
+    build: .
+    container_name: browsy-sync-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - SYNC_TOKEN=change_me_to_your_secure_server_token
+    volumes:
+      - ./data:/app/data

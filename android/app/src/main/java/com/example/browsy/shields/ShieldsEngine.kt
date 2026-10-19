@@ -176,6 +176,14 @@ object ShieldsEngine {
     return customCosmeticSelectors.toList()
   }
 
+  fun setCustomCosmeticRules(rules: List<String>) {
+    customCosmeticSelectors.clear()
+    for (r in rules) {
+      val trimmed = r.trim()
+      if (trimmed.isNotBlank()) customCosmeticSelectors.add(trimmed)
+    }
+  }
+
   /**
    * Cosmetic filter script injected into WebViews to remove banner spaces,
    * user-selected elements (via Element Picker), and layout placeholders.
