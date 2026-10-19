@@ -43,10 +43,35 @@ class TabManager {
     }
   }
 
-  setViewVisibility(visible) {
+  async captureActivePage() {
     const activeTab = this.getActiveTab();
-    if (activeTab && activeTab.view) {
-      activeTab.view.setVisible(visible);
+    if (!activeTab || !activeTab.view || activeTab.view.webContents.isDestroyed()) {
+      return null;
+    }
+    try {
+      const img = await activeTab.view.webContents.capturePage();
+      return img.isEmpty() ? null : img.toDataURL();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async setViewVisibility(visible) {
+    const activeTab = this.getActiveTab();
+    if (!activeTab || !activeTab.view || activeTab.view.webContents.isDestroyed()) {
+      return { visible };
+    }
+    if (!visible) {
+      let screenshot = null;
+      try {
+        const img = await activeTab.view.webContents.capturePage();
+        if (!img.isEmpty()) screenshot = img.toDataURL();
+      } catch (e) {}
+      activeTab.view.setVisible(false);
+      return { visible: false, screenshot };
+    } else {
+      activeTab.view.setVisible(true);
+      return { visible: true, screenshot: null };
     }
   }
 

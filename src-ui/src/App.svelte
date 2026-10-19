@@ -158,13 +158,72 @@
     return rawUrl;
   }
 
-  // Prevent WebContentsView from covering popovers or modals
+  let activeScreenshot = $state(null);
+
+  // Prevent WebContentsView from covering popovers or modals while preserving the visible webpage
   $effect(() => {
     const isOverlayActive = showWorkspaceModal || activePopover !== null;
-    if (api && api.setViewVisibility) {
-      api.setViewVisibility(!isOverlayActive);
+    if (!api || !api.setViewVisibility) return;
+
+    if (isOverlayActive) {
+      if (!activeScreenshot && api.captureActivePage) {
+        api.captureActivePage().then((shot) => {
+          if (shot) activeScreenshot = shot;
+          api.setViewVisibility(false);
+        }).catch(() => {
+          api.setViewVisibility(false);
+        });
+      } else {
+        api.setViewVisibility(false);
+      }
+    } else {
+      activeScreenshot = null;
+      api.setViewVisibility(true);
     }
   });
+
+  async function openOverlay(name) {
+    if (activePopover === name) {
+      closeOverlay();
+      return;
+    }
+    if (api && api.captureActivePage) {
+      try {
+        const shot = await api.captureActivePage();
+        if (shot) activeScreenshot = shot;
+      } catch (e) {}
+    }
+    if (api && api.setViewVisibility) {
+      await api.setViewVisibility(false);
+    }
+    activePopover = name;
+    if (name === 'shields') loadShieldsInfo();
+    if (name === 'expander') loadExpander();
+    if (name === 'extensions') loadExtensions();
+  }
+
+  function closeOverlay() {
+    activePopover = null;
+    showWorkspaceModal = false;
+    activeScreenshot = null;
+    if (api && api.setViewVisibility) {
+      api.setViewVisibility(true);
+    }
+  }
+
+  async function openWorkspaceModal() {
+    if (api && api.captureActivePage) {
+      try {
+        const shot = await api.captureActivePage();
+        if (shot) activeScreenshot = shot;
+      } catch (e) {}
+    }
+    if (api && api.setViewVisibility) {
+      await api.setViewVisibility(false);
+    }
+    activePopover = null;
+    showWorkspaceModal = true;
+  }
 
   onMount(async () => {
     if (!api) return;
@@ -287,8 +346,7 @@
           api.switchWorkspace(workspaces[idx].id);
         }
       } else if (e.key === 'Escape') {
-        activePopover = null;
-        showWorkspaceModal = false;
+        closeOverlay();
         contextMenu.visible = false;
       }
     });
@@ -348,11 +406,8 @@
     setTimeout(syncViewport, 220);
   }
 
-  function togglePopover(name) {
-    activePopover = activePopover === name ? null : name;
-    if (activePopover === 'shields') loadShieldsInfo();
-    if (activePopover === 'expander') loadExpander();
-    if (activePopover === 'extensions') loadExtensions();
+  async function togglePopover(name) {
+    await openOverlay(name);
   }
 
   async function loadShieldsInfo() {
@@ -457,9 +512,9 @@
     siteInfo = await api.getSiteInfo(activeTabId);
   }
 
-  function toggleSiteInfo() {
+  async function toggleSiteInfo() {
     if (activePopover === 'site-info') {
-      activePopover = null;
+      closeOverlay();
     } else {
       if (lockBtnEl) {
         const rect = lockBtnEl.getBoundingClientRect();
@@ -468,10 +523,10 @@
           left: Math.round(rect.left)
         };
       }
-      activePopover = 'site-info';
       siteDataCleared = false;
       showCertDetails = false;
       loadSiteInfo();
+      await openOverlay('site-info');
     }
   }
 
@@ -783,7 +838,14 @@
     {/if}
 
     <!-- Chromium WebContentsView Viewport Target -->
-    <main id="web-view-viewport" bind:this={viewportEl}></main>
+    <main
+      id="web-view-viewport"
+      bind:this={viewportEl}
+      style={activeScreenshot ? `background-image: url('${activeScreenshot}'); background-size: cover; background-position: top left; background-repeat: no-repeat;` : ''}
+      onclick={() => {
+        if (activePopover || showWorkspaceModal) closeOverlay();
+      }}
+    ></main>
   </div>
 
   <!-- Popovers (Monochromatic with SVGs) -->
@@ -791,6 +853,7 @@
     <div
       class="popover site-info-popover"
       style={`top: ${siteInfoPos.top}px; left: ${siteInfoPos.left}px; right: auto;`}
+      onclick={(e) => e.stopPropagation()}
     >
       <div class="popover-header">
         <div class="popover-title">
@@ -803,7 +866,7 @@
           {/if}
           <span class="site-info-domain">{siteInfo?.domain || 'Tento web'}</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null} title="Zavřít">
+        <button class="popover-close-btn" onclick={closeOverlay} title="Zavřít">
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -998,13 +1061,13 @@
   {/if}
 
   {#if activePopover === 'shields'}
-    <div class="popover" style="width: 370px;">
+    <div class="popover" style="width: 370px;" onclick={(e) => e.stopPropagation()}>
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="shield" size={16} />
           <span>Browsy Shields & AdBlock</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>
+        <button class="popover-close-btn" onclick={closeOverlay}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -1126,13 +1189,13 @@
   {/if}
 
   {#if activePopover === 'video'}
-    <div class="popover">
+    <div class="popover" onclick={(e) => e.stopPropagation()}>
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="video" size={16} />
           <span>Web Video Downloader</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>
+        <button class="popover-close-btn" onclick={closeOverlay}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -1155,13 +1218,13 @@
   {/if}
 
   {#if activePopover === 'workspace'}
-    <div class="popover">
+    <div class="popover" onclick={(e) => e.stopPropagation()}>
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="layers" size={16} />
           <span>Pracovní prostory (Zen Workspaces)</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>
+        <button class="popover-close-btn" onclick={closeOverlay}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -1170,7 +1233,7 @@
           {#each workspaces as ws}
             <div
               class={`ws-item-row ${ws.id === activeWorkspaceId ? 'active' : ''}`}
-              onclick={() => { api.switchWorkspace(ws.id); activePopover = null; }}
+              onclick={() => { api.switchWorkspace(ws.id); closeOverlay(); }}
               role="button"
               tabindex="0"
             >
@@ -1182,7 +1245,7 @@
             </div>
           {/each}
         </div>
-        <button class="primary-btn full-width" style="margin-top:12px;" onclick={() => { activePopover = null; showWorkspaceModal = true; }}>
+        <button class="primary-btn full-width" style="margin-top:12px;" onclick={openWorkspaceModal}>
           <Icon name="plus" size={14} />
           <span>Vytvořit nový prostor</span>
         </button>
@@ -1191,13 +1254,13 @@
   {/if}
 
   {#if activePopover === 'expander'}
-    <div class="popover expander-popover">
+    <div class="popover expander-popover" onclick={(e) => e.stopPropagation()}>
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="expander" size={16} />
           <span>Text Expander</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>
+        <button class="popover-close-btn" onclick={closeOverlay}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -1227,13 +1290,13 @@
   {/if}
 
   {#if activePopover === 'extensions'}
-    <div class="popover">
+    <div class="popover" onclick={(e) => e.stopPropagation()}>
       <div class="popover-header">
         <div class="popover-title">
           <Icon name="extensions" size={16} />
           <span>Doplňky (Chrome & Firefox)</span>
         </div>
-        <button class="popover-close-btn" onclick={() => activePopover = null}>
+        <button class="popover-close-btn" onclick={closeOverlay}>
           <Icon name="close" size={14} />
         </button>
       </div>
@@ -1242,21 +1305,21 @@
           <Icon name="plus" size={14} />
           <span>Nainstalovat doplněk (.crx / .xpi / .zip)</span>
         </button>
-        <button class="secondary-btn full-width" style="margin-top: 8px;" onclick={() => { navigate('browsy://extensions'); activePopover = null; }}>
+        <button class="secondary-btn full-width" style="margin-top: 8px;" onclick={() => { navigate('browsy://extensions'); closeOverlay(); }}>
           Spravovat doplňky
         </button>
 
         <div style="font-size:11px; font-weight:600; color:var(--text-muted); margin-top:14px; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">Katalogy doplňků</div>
         <div style="display:flex; flex-direction:column; gap:6px;">
-          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://chromewebstore.google.com'); activePopover = null; }}>
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://chromewebstore.google.com'); closeOverlay(); }}>
             <Icon name="globe" size={14} />
             <span style="margin-left:8px;">Chrome Web Store</span>
           </button>
-          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.opera.com/extensions/'); activePopover = null; }}>
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.opera.com/extensions/'); closeOverlay(); }}>
             <Icon name="extensions" size={14} />
             <span style="margin-left:8px;">Opera Add-ons Store</span>
           </button>
-          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.mozilla.org/firefox/extensions/'); activePopover = null; }}>
+          <button class="secondary-btn full-width" style="text-align:left; justify-content:flex-start;" onclick={() => { createTabWithUrl('https://addons.mozilla.org/firefox/extensions/'); closeOverlay(); }}>
             <Icon name="star" size={14} />
             <span style="margin-left:8px;">Firefox Add-ons (AMO)</span>
           </button>
@@ -1275,11 +1338,11 @@
 
   <!-- Modals -->
   {#if showWorkspaceModal}
-    <div class="modal-backdrop">
-      <div class="modal-dialog" style="width:440px;">
+    <div class="modal-backdrop" onclick={(e) => { if (e.target === e.currentTarget) closeOverlay(); }}>
+      <div class="modal-dialog" style="width:440px;" onclick={(e) => e.stopPropagation()}>
         <div class="modal-header">
           <h2>Nový pracovní prostor</h2>
-          <button class="modal-close-btn" onclick={() => showWorkspaceModal = false}>
+          <button class="modal-close-btn" onclick={closeOverlay}>
             <Icon name="close" size={16} />
           </button>
         </div>

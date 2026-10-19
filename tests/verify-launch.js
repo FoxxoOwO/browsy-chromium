@@ -143,6 +143,17 @@ if (!cssSource.includes('-webkit-app-region: drag') || !cssSource.includes('padd
   console.error('FAIL: src/ui/style.css missing drag region or titleBarOverlay padding');
   process.exit(1);
 }
-console.log('Frameless Titlebar & Overlay: PASS');
+console.log('--- TEST 9: Verify Seamless Overlay Snapshot APIs ---');
+const TabManager = require('../src/main/tab-manager');
+if (typeof TabManager.prototype.captureActivePage !== 'function' || typeof TabManager.prototype.setViewVisibility !== 'function') {
+  console.error('FAIL: TabManager missing captureActivePage or setViewVisibility');
+  process.exit(1);
+}
+const preloadSource = fs.readFileSync(path.join(__dirname, '../preload.js'), 'utf-8');
+if (!preloadSource.includes('captureActivePage: () =>') || !mainSource.includes('tabs:capture-active')) {
+  console.error('FAIL: preload.js or main.js missing captureActivePage mapping');
+  process.exit(1);
+}
+console.log('Overlay Snapshot APIs: PASS');
 
 console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');

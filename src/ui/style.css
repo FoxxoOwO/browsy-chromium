@@ -510,7 +510,10 @@ body.layout-vertical #nav-bar .action-tools {
 
 #web-view-viewport {
   flex: 1;
-  background-color: #000;
+  background-color: var(--bg-primary);
+  background-size: cover;
+  background-position: top left;
+  background-repeat: no-repeat;
   position: relative;
 }
 
@@ -519,7 +522,7 @@ body.layout-vertical #nav-bar .action-tools {
 /* ========================================================= */
 .popover {
   position: absolute;
-  top: 50px;
+  top: calc(var(--tab-height) + var(--navbar-height) + 4px);
   right: 12px;
   width: 360px;
   background-color: var(--bg-secondary);
@@ -531,6 +534,11 @@ body.layout-vertical #nav-bar .action-tools {
   flex-direction: column;
   overflow: hidden;
   animation: popoverFadeIn 0.15s ease-out;
+}
+
+.layout-vertical .popover,
+body.layout-vertical .popover {
+  top: calc(var(--navbar-height) + 4px);
 }
 
 .expander-popover {

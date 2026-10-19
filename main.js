@@ -209,11 +209,15 @@ function setupIPC() {
     }
     return mode;
   });
-  ipcMain.handle('layout:set-view-visibility', (e, visible) => {
+  ipcMain.handle('tabs:capture-active', async () => {
+    if (tabManager) return await tabManager.captureActivePage();
+    return null;
+  });
+  ipcMain.handle('layout:set-view-visibility', async (e, visible) => {
     if (tabManager) {
-      tabManager.setViewVisibility(visible);
+      return await tabManager.setViewVisibility(visible);
     }
-    return true;
+    return { visible };
   });
 
   // Shields & Adblocker
