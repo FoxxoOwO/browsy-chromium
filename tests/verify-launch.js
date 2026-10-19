@@ -192,5 +192,55 @@ if (!androidManifest.includes('android.permission.INTERNET') || !androidManifest
 }
 console.log('Android Package & Architecture: PASS (' + (apkStats.size / (1024 * 1024)).toFixed(2) + ' MB)');
 
-console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
+console.log('--- TEST 12: Verify Profile Sync (Export & Import) ---');
+const profileSync = require('../src/main/profile-sync');
+const testBackupPath = path.join(__dirname, 'test-profile-backup.json');
+
+(async () => {
+  try {
+    const exportRes = await profileSync.exportProfile(testBackupPath);
+    if (!exportRes.success || !fs.existsSync(testBackupPath)) {
+      console.error('FAIL: profile export failed');
+      process.exit(1);
+    }
+    const importRes = await profileSync.importProfile(testBackupPath);
+    if (!importRes.success) {
+      console.error('FAIL: profile import failed');
+      process.exit(1);
+    }
+    try { fs.unlinkSync(testBackupPath); } catch (e) {}
+    console.log('Profile Sync: PASS');
+
+    console.log('--- TEST 13: Verify Encrypted Password Vault ---');
+    const passwordVault = require('../src/main/password-vault');
+    passwordVault.clearVault();
+    const added = passwordVault.addLogin({
+      url: 'https://github.com',
+      username: 'testuser',
+      password: 'superSecretPassword123!',
+      label: 'GitHub Work'
+    });
+    if (!added || !added.id) {
+      console.error('FAIL: failed to add login to vault');
+      process.exit(1);
+    }
+    const logins = passwordVault.getLogins('github.com');
+    if (logins.length !== 1 || logins[0].password !== 'superSecretPassword123!') {
+      console.error('FAIL: vault failed to decrypt password correctly');
+      process.exit(1);
+    }
+    passwordVault.deleteLogin(added.id);
+    if (passwordVault.getLogins('github.com').length !== 0) {
+      console.error('FAIL: vault failed to delete login');
+      process.exit(1);
+    }
+    console.log('Password Vault: PASS');
+
+    console.log('ALL INTEGRATION CHECKS PASSED SUCCESSFULLY!');
+  } catch (err) {
+    console.error('Integration test failed with error:', err);
+    process.exit(1);
+  }
+})();
+
 

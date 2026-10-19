@@ -10,6 +10,8 @@ const videoDownloader = require('./src/main/video-downloader');
 const textExpander = require('./src/main/text-expander');
 const siteInfoManager = require('./src/main/site-info-manager');
 const TabManager = require('./src/main/tab-manager');
+const profileSync = require('./src/main/profile-sync');
+const passwordVault = require('./src/main/password-vault');
 
 let mainWindow = null;
 let tabManager = null;
@@ -392,6 +394,28 @@ function setupIPC() {
   });
   ipcMain.handle('site-info:reset-permissions', (e, origin) => {
     return siteInfoManager.resetPermissions(origin);
+  });
+
+  // Profile Sync (Export & Import)
+  ipcMain.handle('profile:export', async () => {
+    return await profileSync.exportProfile(null, mainWindow);
+  });
+  ipcMain.handle('profile:import', async () => {
+    return await profileSync.importProfile(null, mainWindow);
+  });
+
+  // Password Vault (Encrypted Logins)
+  ipcMain.handle('vault:get-logins', (e, domain) => {
+    return passwordVault.getLogins(domain);
+  });
+  ipcMain.handle('vault:add-login', (e, data) => {
+    return passwordVault.addLogin(data);
+  });
+  ipcMain.handle('vault:delete-login', (e, id) => {
+    return passwordVault.deleteLogin(id);
+  });
+  ipcMain.handle('vault:clear', () => {
+    return passwordVault.clearVault();
   });
 }
 

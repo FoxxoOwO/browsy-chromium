@@ -1,0 +1,123 @@
+name: Build & Release Browsy
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # -------------------------------------------------------------
+  # Desktop Build (Windows Electron + Rust NAPI)
+  # -------------------------------------------------------------
+  build-desktop:
+    name: Build Desktop (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Rust native core & UI
+        run: npm run build
+
+      - name: Run verification test suite
+        run: npm test
+
+      - name: Package Windows executable
+        run: npm run package:exe
+
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Browsy-Windows
+          path: release/Browsy-win32-x64/
+
+  # -------------------------------------------------------------
+  # Android Build (Gradle + Jetpack Compose APK)
+  # -------------------------------------------------------------
+  build-android:
+    name: Build Android (APK)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Run Android Unit Tests
+        run: cd android && ./gradlew test
+
+      - name: Build Debug APK
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Browsy-Android-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+  # -------------------------------------------------------------
+  # Automatic Release on Git Tags (e.g. v1.0.0)
+  # -------------------------------------------------------------
+  publish-release:
+    name: Publish GitHub Release
+    needs: [ build-desktop, build-android ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Browsy-Windows
+          path: release-win
+
+      - name: Download Android Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Browsy-Android-APK
+          path: release-android
+
+      - name: Create Zip for Windows
+        run: |
+          cd release-win
+          zip -r ../Browsy-Windows-Portable.zip .
+          cd ..
+          mv release-android/app-debug.apk Browsy-Android.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Browsy-Windows-Portable.zip
+            Browsy-Android.apk
+          name: Browsy Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true

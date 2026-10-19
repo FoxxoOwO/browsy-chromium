@@ -160,19 +160,40 @@ object ShieldsEngine {
     )
   }
 
+  private val customCosmeticSelectors = mutableSetOf<String>()
+
+  fun addCustomCosmeticRule(selector: String) {
+    if (selector.isNotBlank()) {
+      customCosmeticSelectors.add(selector.trim())
+    }
+  }
+
+  fun removeCustomCosmeticRule(selector: String) {
+    customCosmeticSelectors.remove(selector.trim())
+  }
+
+  fun getCustomCosmeticRules(): List<String> {
+    return customCosmeticSelectors.toList()
+  }
+
   /**
    * Cosmetic filter script injected into WebViews to remove banner spaces,
-   * sponsored blocks, and layout placeholders.
+   * user-selected elements (via Element Picker), and layout placeholders.
    */
   fun getCosmeticFilterScript(): String {
+    val customPart = if (customCosmeticSelectors.isNotEmpty()) {
+      customCosmeticSelectors.joinToString(", ") + " { display: none !important; }\n"
+    } else ""
+
     return """
       (function() {
-        if (window.__browsyCosmeticInjected) return;
-        window.__browsyCosmeticInjected = true;
+        var existing = document.getElementById('browsy-cosmetic-shield');
+        if (existing) existing.remove();
         
         var style = document.createElement('style');
         style.id = 'browsy-cosmetic-shield';
         style.textContent = `
+          $customPart
           [id*="google_ads"],
           [id*="ad-banner"],
           [class*="ad-banner"],

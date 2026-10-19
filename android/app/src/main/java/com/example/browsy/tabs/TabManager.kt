@@ -19,10 +19,17 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import android.os.Handler
+import android.os.Looper
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.webkit.JavascriptInterface
 import com.example.browsy.data.HistoryAndBookmarksManager
 import com.example.browsy.data.SettingsManager
 import com.example.browsy.expander.TextExpanderManager
 import com.example.browsy.shields.ShieldsEngine
+import org.json.JSONObject
+import org.json.JSONTokener
 
 class TabManager(
   private val context: Context,
@@ -33,6 +40,7 @@ class TabManager(
 
   val tabs = mutableStateListOf<TabData>()
   val activeTabId = mutableStateOf<String>("")
+  var onElementPickedCallback: ((String) -> Unit)? = null
 
   val activeTab: TabData?
     get() = tabs.firstOrNull { it.id == activeTabId.value }
@@ -80,6 +88,12 @@ class TabManager(
         CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
       }
 
+      setFindListener { activeMatchOrdinal, numberOfMatches, _ ->
+        tab.findActiveOrdinal = activeMatchOrdinal
+        tab.findTotalMatches = numberOfMatches
+      }
+      addJavascriptInterface(BrowsyBridge(tab), "BrowsyBridge")
+
       webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
           view: WebView?,
@@ -97,6 +111,9 @@ class TabManager(
           super.onPageStarted(view, url, favicon)
           tab.isLoading = true
           tab.progress = 10
+          tab.isFindingInPage = false
+          tab.isReaderMode = false
+          tab.isElementPickerActive = false
           if (url != null) {
             tab.url = url
           }
@@ -108,7 +125,7 @@ class TabManager(
           super.onPageFinished(view, url)
           tab.isLoading = false
           tab.progress = 100
-          if (url != null) {
+          if (url != null && url != "about:blank" && url != "browsy://newtab") {
             tab.url = url
             val title = view?.title ?: url
             tab.title = title
@@ -309,5 +326,196 @@ class TabManager(
         )
       }
     }
+  }
+
+  inner class BrowsyBridge(private val tab: TabData) {
+    @JavascriptInterface
+    fun onElementSelected(selector: String) {
+      Handler(Looper.getMainLooper()).post {
+        tab.isElementPickerActive = false
+        onElementPickedCallback?.invoke(selector)
+      }
+    }
+  }
+
+  // --- Find in Page ---
+  fun startFindInPage() {
+    val tab = activeTab ?: return
+    tab.isFindingInPage = true
+  }
+
+  fun findInPage(query: String) {
+    val tab = activeTab ?: return
+    tab.findQuery = query
+    if (query.isNotBlank()) {
+      tab.webView?.findAllAsync(query)
+    } else {
+      tab.webView?.clearMatches()
+      tab.findTotalMatches = 0
+      tab.findActiveOrdinal = 0
+    }
+  }
+
+  fun findNext(forward: Boolean) {
+    val tab = activeTab ?: return
+    tab.webView?.findNext(forward)
+  }
+
+  fun clearFind() {
+    val tab = activeTab ?: return
+    tab.isFindingInPage = false
+    tab.findQuery = ""
+    tab.findActiveOrdinal = 0
+    tab.findTotalMatches = 0
+    tab.webView?.clearMatches()
+  }
+
+  // --- Reader Mode ---
+  fun toggleReaderMode() {
+    val tab = activeTab ?: return
+    if (tab.isReaderMode) {
+      tab.isReaderMode = false
+      return
+    }
+    tab.readerLoading = true
+    val script = """
+      (function() {
+        var article = document.querySelector('article') || document.querySelector('main') || document.querySelector('.post-content') || document.querySelector('.article-content') || document.body;
+        var title = (document.querySelector('h1') ? document.querySelector('h1').innerText : document.title) || '';
+        var clone = article.cloneNode(true);
+        var junk = clone.querySelectorAll('script, style, iframe, [id*="ad"], [class*="ad"], [class*="banner"], nav, footer, header');
+        for (var i = 0; i < junk.length; i++) junk[i].remove();
+        return JSON.stringify({
+          title: title.trim(),
+          content: clone.innerText.trim()
+        });
+      })();
+    """.trimIndent()
+
+    tab.webView?.evaluateJavascript(script) { result ->
+      tab.readerLoading = false
+      if (!result.isNullOrBlank() && result != "null") {
+        try {
+          val jsonStr = if (result.startsWith("\"") && result.endsWith("\"")) {
+            JSONTokener(result).nextValue().toString()
+          } else result
+          val obj = JSONObject(jsonStr)
+          val parsedTitle = obj.optString("title", tab.title)
+          val parsedContent = obj.optString("content", "")
+          if (parsedContent.isNotBlank()) {
+            tab.readerTitle = parsedTitle
+            tab.readerContent = parsedContent
+            tab.isReaderMode = true
+          } else {
+            Toast.makeText(context, "Na této stránce nebyl nalezen žádný článek.", Toast.LENGTH_SHORT).show()
+          }
+        } catch (_: Exception) {
+          tab.readerTitle = tab.title
+          tab.readerContent = "Obsah článku se nepodařilo extrahovat."
+          tab.isReaderMode = true
+        }
+      } else {
+        Toast.makeText(context, "Na této stránce nebyl nalezen žádný článek.", Toast.LENGTH_SHORT).show()
+      }
+    }
+  }
+
+  // --- Element Remover ---
+  fun startElementPicker() {
+    val tab = activeTab ?: return
+    tab.isElementPickerActive = true
+    val script = """
+      (function() {
+        if (window.__browsyPicker) return;
+        window.__browsyPicker = true;
+        var overlay = document.createElement('div');
+        overlay.id = '__browsy_ov';
+        overlay.style.cssText = 'position:fixed;pointer-events:none;border:2.5px solid #ef4444;background:rgba(239,68,68,0.25);z-index:2147483647;display:none;transition:all 0.05s ease;';
+        document.body.appendChild(overlay);
+        var targetEl = null;
+        function getSel(el) {
+          if (!el || el === document.body || el === document.documentElement) return '';
+          if (el.id) return '#' + CSS.escape(el.id);
+          var tag = el.tagName.toLowerCase();
+          if (el.className && typeof el.className === 'string') {
+            var c = el.className.trim().split(/\s+/).filter(function(x) { return x && !x.startsWith('__'); });
+            if (c.length > 0) return tag + '.' + c.slice(0, 2).map(CSS.escape).join('.');
+          }
+          return tag;
+        }
+        function onTouch(e) {
+          var t = e.touches[0];
+          var el = document.elementFromPoint(t.clientX, t.clientY);
+          if (el && el !== overlay) {
+            targetEl = el;
+            var r = el.getBoundingClientRect();
+            overlay.style.display = 'block';
+            overlay.style.top = r.top + 'px';
+            overlay.style.left = r.left + 'px';
+            overlay.style.width = r.width + 'px';
+            overlay.style.height = r.height + 'px';
+          }
+        }
+        function onClick(e) {
+          e.preventDefault(); e.stopPropagation();
+          var el = targetEl || e.target;
+          var sel = getSel(el);
+          cleanup();
+          if (window.BrowsyBridge && sel) window.BrowsyBridge.onElementSelected(sel);
+        }
+        function cleanup() {
+          window.__browsyPicker = false;
+          document.removeEventListener('touchmove', onTouch, true);
+          document.removeEventListener('click', onClick, true);
+          if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }
+        document.addEventListener('touchmove', onTouch, { passive: true, capture: true });
+        document.addEventListener('click', onClick, { capture: true });
+      })();
+    """.trimIndent()
+    tab.webView?.evaluateJavascript(script, null)
+    Toast.makeText(context, "Klepněte na prvek, který chcete trvale odstranit", Toast.LENGTH_SHORT).show()
+  }
+
+  fun cancelElementPicker() {
+    val tab = activeTab ?: return
+    tab.isElementPickerActive = false
+    tab.webView?.evaluateJavascript(
+      "(function(){ var o = document.getElementById('__browsy_ov'); if(o) o.remove(); window.__browsyPicker = false; })();",
+      null
+    )
+  }
+
+  fun permanentlyRemoveElement(selector: String) {
+    ShieldsEngine.addCustomCosmeticRule(selector)
+    val tab = activeTab ?: return
+    tab.webView?.evaluateJavascript(
+      "(function(){ var els = document.querySelectorAll('$selector'); els.forEach(function(e){ e.style.display = 'none'; }); })();",
+      null
+    )
+    Toast.makeText(context, "Prvek byl trvale odstraněn a přidán do filtrů.", Toast.LENGTH_SHORT).show()
+  }
+
+  // --- Share & Print ---
+  fun shareCurrentPage() {
+    val tab = activeTab ?: return
+    val intent = Intent(Intent.ACTION_SEND).apply {
+      type = "text/plain"
+      putExtra(Intent.EXTRA_SUBJECT, tab.title)
+      putExtra(Intent.EXTRA_TEXT, tab.url)
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
+    context.startActivity(Intent.createChooser(intent, "Sdílet stránku přes").apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    })
+  }
+
+  fun printCurrentPage() {
+    val tab = activeTab ?: return
+    val web = tab.webView ?: return
+    val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
+    val jobName = "Browsy_${tab.title.take(20).replace(" ", "_")}"
+    val adapter = web.createPrintDocumentAdapter(jobName)
+    printManager.print(jobName, adapter, PrintAttributes.Builder().build())
   }
 }

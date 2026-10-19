@@ -78,6 +78,16 @@ contextBridge.exposeInMainWorld('browsyAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get-all'),
   setSetting: (key, val) => ipcRenderer.invoke('settings:set', key, val),
 
+  // Profile Sync (Export & Import)
+  exportProfile: () => ipcRenderer.invoke('profile:export'),
+  importProfile: () => ipcRenderer.invoke('profile:import'),
+
+  // Password Vault (Encrypted Logins)
+  getVaultLogins: (domain) => ipcRenderer.invoke('vault:get-logins', domain),
+  addVaultLogin: (data) => ipcRenderer.invoke('vault:add-login', data),
+  deleteVaultLogin: (id) => ipcRenderer.invoke('vault:delete-login', id),
+  clearVault: () => ipcRenderer.invoke('vault:clear'),
+
   // Site Info & Permissions (Chrome-like Lock modal)
   getSiteInfo: (tabId) => ipcRenderer.invoke('site-info:get', tabId),
   clearSiteData: (tabId) => ipcRenderer.invoke('site-info:clear-data', tabId),
